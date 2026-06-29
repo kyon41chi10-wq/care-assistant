@@ -1,0 +1,2735 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<!-- iPad Safari 最適化: セーフエリア対応・ピンチズーム許可（高齢者施設での視認性確保） -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<title>介護AI Assistant</title>
+<style>
+/* =====================================================================
+   デザイントークン
+   - Apple純正アプリ調（iOSグループ化UI / 広い余白 / 角丸 / 控えめな影）
+   - モードでアクセント色を切り替え（通常記録=ティール / 事故報告=琥珀）
+   ===================================================================== */
+:root{
+  /* 面・文字 */
+  --bg:#f1f2f5;
+  --surface:#ffffff;
+  --surface-2:#f7f8fa;
+  --ink:#1c1c1e;
+  --ink-2:#6b6e76;
+  --ink-3:#a4a8b0;
+  --line:#e6e8ec;
+  --line-2:#eef0f3;
+
+  /* アクセント（既定=通常記録のティール） */
+  --accent:#0c8f7e;
+  --accent-weak:#e6f5f2;
+  --accent-ink:#0a6f62;
+
+  /* 状態色 */
+  --ok:#0c8f7e;
+  --warn:#c77a2a;
+
+  /* かたち */
+  --r-lg:22px;
+  --r-md:16px;
+  --r-sm:12px;
+  --shadow:0 1px 2px rgba(20,23,28,.04), 0 8px 24px rgba(20,23,28,.05);
+  --shadow-soft:0 1px 3px rgba(20,23,28,.06);
+
+  /* タップ領域（タブレット・高齢者施設向けに大きめ） */
+  --tap:56px;
+
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro JP","SF Pro Text","Hiragino Sans","ヒラギノ角ゴシック","Yu Gothic UI","Noto Sans JP",system-ui,sans-serif;
+}
+/* 事故報告モード: 落ち着いた琥珀へ（緊張感は出すが警告色の赤は使わない） */
+[data-mode="accident"]{
+  --accent:#bd6a2a;
+  --accent-weak:#f6ecdf;
+  --accent-ink:#9a531c;
+}
+
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+html,body{height:100%;}
+body{
+  margin:0;
+  font-family:var(--font);
+  background:var(--bg);
+  color:var(--ink);
+  font-size:17px;
+  line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+  /* iOS慣性スクロール */
+  overscroll-behavior-y:none;
+}
+button{font-family:inherit; cursor:pointer;}
+:focus-visible{outline:3px solid var(--accent); outline-offset:2px; border-radius:8px;}
+
+/* アプリ全体は1画面に収め、内部をビュー切替する（SPA） */
+#app{
+  height:100dvh;
+  display:flex;
+  flex-direction:column;
+  max-width:1180px;
+  margin:0 auto;
+  background:var(--bg);
+}
+
+/* ====================== 共通: ボタン ====================== */
+.btn{
+  min-height:var(--tap);
+  border:none;
+  border-radius:var(--r-md);
+  padding:0 22px;
+  font-size:17px;
+  font-weight:600;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  transition:transform .12s ease, background .15s ease, opacity .15s ease;
+}
+.btn:active{transform:scale(.97);}
+.btn-primary{background:var(--accent); color:#fff;}
+.btn-primary:disabled{background:#c7cad0; color:#fff; opacity:.8;}
+.btn-ghost{background:var(--surface-2); color:var(--ink); border:1px solid var(--line);}
+.btn-chip{
+  min-height:40px; padding:0 14px; border-radius:999px;
+  background:var(--surface-2); color:var(--accent-ink);
+  border:1px solid var(--line); font-size:15px; font-weight:600;
+}
+
+/* ====================== ホーム画面 ====================== */
+.home{
+  flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  padding:max(28px,env(safe-area-inset-top)) 20px calc(28px + env(safe-area-inset-bottom));
+  display:flex; flex-direction:column; align-items:center;
+}
+.home-inner{width:100%; max-width:560px;}
+.brand{
+  text-align:center; margin:18px 0 30px;
+}
+.brand .mark{
+  width:64px;height:64px;border-radius:20px;margin:0 auto 16px;
+  background:linear-gradient(155deg,#13a08d,#0c8f7e);
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 10px 24px rgba(12,143,126,.28);
+}
+.brand .mark svg{width:34px;height:34px;}
+.brand h1{font-size:27px; font-weight:700; letter-spacing:.01em; margin:0 0 6px;}
+.brand p{margin:0; color:var(--ink-2); font-size:15px;}
+
+/* iOSグループ化リスト風セクション */
+.group{margin-bottom:26px;}
+.group-label{
+  font-size:13px; font-weight:600; color:var(--ink-2);
+  letter-spacing:.04em; padding:0 16px 8px; text-transform:none;
+}
+.card-list{
+  background:var(--surface); border-radius:var(--r-lg);
+  box-shadow:var(--shadow-soft); overflow:hidden;
+}
+.row{
+  min-height:var(--tap); padding:14px 18px;
+  display:flex; align-items:center; gap:14px;
+  border-top:1px solid var(--line-2);
+  background:var(--surface); width:100%; text-align:left;
+}
+.row:first-child{border-top:none;}
+.row .row-ic{
+  width:30px;height:30px;border-radius:9px;flex:none;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--accent-weak); color:var(--accent-ink);
+}
+.row .row-ic svg{width:18px;height:18px;}
+.row .row-main{flex:1; min-width:0;}
+.row .row-title{font-size:17px; font-weight:600;}
+.row .row-sub{font-size:13px; color:var(--ink-3);}
+.row[disabled]{opacity:.5;}
+
+/* 利用者選択（ネイティブselectを大きく） */
+.select-wrap{position:relative;}
+.select-wrap select{
+  -webkit-appearance:none; appearance:none;
+  width:100%; min-height:var(--tap);
+  border:none; background:transparent;
+  font-size:17px; font-weight:600; color:var(--ink);
+  padding:14px 44px 14px 18px;
+}
+.select-wrap::after{
+  content:""; position:absolute; right:18px; top:50%; width:11px;height:11px;
+  border-right:2.5px solid var(--ink-3); border-bottom:2.5px solid var(--ink-3);
+  transform:translateY(-65%) rotate(45deg); pointer-events:none;
+}
+
+/* ラジオ（入力種別） */
+.radio-row{cursor:pointer;}
+.radio-row .radio{
+  width:26px;height:26px;border-radius:50%;border:2px solid var(--line);
+  flex:none; display:flex;align-items:center;justify-content:center;
+  transition:border-color .15s ease;
+}
+.radio-row[aria-checked="true"] .radio{border-color:var(--accent);}
+.radio-row[aria-checked="true"] .radio::after{
+  content:"";width:14px;height:14px;border-radius:50%;background:var(--accent);
+}
+.radio-row .badge-soon{
+  font-size:11px;font-weight:700;color:var(--ink-3);
+  background:var(--surface-2);border:1px solid var(--line);
+  padding:3px 8px;border-radius:999px;letter-spacing:.03em;
+}
+.home-cta{position:sticky; bottom:0; padding-top:10px;}
+.home-cta .btn{width:100%;}
+
+/* ====================== チャット画面 ====================== */
+.chat{flex:1; display:flex; flex-direction:column; min-height:0; background:var(--bg);}
+/* chat-body: messages(flex:1スクロール) + infobar(固定高) を縦に並べる */
+.chat .chat-body{display:flex; flex-direction:column; flex:1; min-height:0; overflow:hidden;}
+.appbar{
+  display:flex; align-items:center; gap:8px;
+  padding:max(8px,env(safe-area-inset-top)) 12px 8px;
+  background:rgba(255,255,255,.86); backdrop-filter:saturate(180%) blur(20px);
+  border-bottom:1px solid var(--line); position:relative; z-index:5;
+}
+.appbar .back{
+  min-width:var(--tap); height:var(--tap); border:none; background:transparent;
+  display:flex; align-items:center; gap:4px; color:var(--accent-ink);
+  font-size:16px; font-weight:600; padding:0 6px;
+}
+.appbar .back svg{width:22px;height:22px;}
+.appbar .title{flex:1; text-align:center; min-width:0;}
+.appbar .title .t{font-size:16px; font-weight:700; line-height:1.2;}
+.appbar .title .s{font-size:12px; color:var(--ink-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.mode-badge{
+  font-size:12px;font-weight:700;color:#fff;background:var(--accent);
+  padding:6px 12px;border-radius:999px;white-space:nowrap;
+}
+
+/* =====================================================================
+ * 取得済み情報バー
+ *
+ * 配置: messages直下・composerの上（chat-body内）
+ * パネルは通常フローで展開 → グレーのメッセージ空きエリアを埋める
+ * ハンドルバーは常時表示、パネルは開閉アニメーション
+ * ===================================================================== */
+.infobar{
+  background:var(--surface);
+  border-top:1px solid var(--line);
+  flex-shrink:0;          /* chat-body内でつぶれない */
+  display:flex;
+  flex-direction:column;  /* panel(上) → bar(下) の順 */
+}
+
+/* --- 展開パネル: 通常フロー・高さアニメーション --- */
+.infobar-panel{
+  overflow:hidden;
+  max-height:0;
+  transition:max-height .3s cubic-bezier(.4,0,.2,1);
+}
+.infobar.open .infobar-panel{
+  /* グリッド3行分(約180px)を上限に、コンテンツ量で決まる */
+  max-height:240px;
+}
+
+/* グリッド: 2列・コンパクト */
+.pills{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:5px;
+  padding:10px 12px 14px;
+}
+
+/* ---- 基本: 未取得 ---- */
+.pill{
+  display:flex; align-items:center; gap:7px;
+  padding:7px 10px; border-radius:10px;
+  background:var(--surface-2); border:1px solid var(--line);
+  transition:background .25s ease, border-color .25s ease;
+  min-width:0;
+}
+.pill .dot{
+  width:15px; height:15px; border-radius:50%; flex:none;
+  border:2px solid var(--line); display:flex; align-items:center; justify-content:center;
+  transition:all .25s ease; flex-shrink:0;
+}
+.pill .dot svg{width:8px;height:8px;opacity:0;transform:scale(.4);transition:all .25s ease;}
+.pill-text{ display:flex; flex-direction:column; min-width:0; gap:1px; }
+.pill-label{ font-size:11px; font-weight:700; color:var(--ink-3); letter-spacing:.02em; line-height:1.2; }
+.pill-value{ font-size:12px; font-weight:600; color:var(--ink-3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.3; }
+
+/* ---- 取得済（緑） ---- */
+.pill.filled{ background:var(--accent-weak); border-color:transparent; animation:pop .35s ease; }
+.pill.filled .dot{ background:var(--accent); border-color:var(--accent); }
+.pill.filled .dot svg{ opacity:1; transform:scale(1); color:#fff; }
+.pill.filled .pill-label{ color:var(--accent-ink); }
+.pill.filled .pill-value{ color:var(--accent-ink); font-weight:700; }
+
+/* ---- 次の質問項目（琥珀 / 点滅ドット） ---- */
+.pill.next-ask{ background:#fff8ef; border-color:#e8a44a; border-width:1.5px; }
+.pill.next-ask .dot{ border-color:#e8a44a; animation:blink 1.6s ease infinite; }
+.pill.next-ask .pill-label{ color:#9a6010; }
+.pill.next-ask .pill-value{ color:#9a6010; }
+
+@keyframes blink{ 0%,100%{opacity:1} 50%{opacity:.35} }
+@keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.06)}100%{transform:scale(1)}}
+
+/* --- 常時表示の1行ハンドルバー --- */
+.infobar-bar{
+  display:flex; align-items:center; gap:10px;
+  padding:0 14px;
+  min-height:46px;
+  cursor:pointer;
+  user-select:none; -webkit-user-select:none;
+}
+.infobar-bar:active{ background:var(--surface-2); }
+
+.bar-left{ display:flex; align-items:center; gap:8px; flex:none; }
+.bar-label{ font-size:12px; font-weight:700; color:var(--ink-2); letter-spacing:.03em; white-space:nowrap; }
+.bar-prog{
+  font-size:12px; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-weak); padding:2px 8px; border-radius:999px; white-space:nowrap;
+}
+
+/* ミニドット列 */
+.bar-dots{ display:flex; align-items:center; gap:5px; flex:1; overflow:hidden; }
+.bar-dot{
+  width:10px; height:10px; border-radius:50%; flex:none;
+  background:var(--line); border:1.5px solid var(--line);
+  transition:all .25s ease;
+}
+.bar-dot.filled{ background:var(--accent); border-color:var(--accent); animation:pop .35s ease; }
+.bar-dot.next-ask{ background:transparent; border-color:#e8a44a; border-width:2px; animation:blink 1.6s ease infinite; }
+
+/* 開閉矢印: パネルは上(DOM的に先)にある。開いているとき上向き(∧)で「閉じる」を示す */
+.bar-chevron{
+  flex:none; width:20px; height:20px; color:var(--ink-3);
+  transition:transform .25s ease;
+  display:flex; align-items:center; justify-content:center;
+}
+/* 閉じているとき: 下向き(∨)で「開く」を示す */
+.infobar.open .bar-chevron{ transform:rotate(180deg); }
+
+/* iPad横向き: 常時展開・矢印不要 */
+@media (min-width:900px){
+  .infobar.open .infobar-panel{ max-height:none; }
+  .chat.with-side .pills{ grid-template-columns:1fr; }
+  .bar-chevron{ display:none; }
+  .infobar-bar{ cursor:default; }
+}
+
+
+/* メッセージ領域 */
+.messages{
+  flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  padding:18px 16px 8px; display:flex; flex-direction:column; gap:14px;
+}
+.msg{display:flex; gap:10px; max-width:100%; animation:rise .3s ease;}
+@keyframes rise{from{opacity:0; transform:translateY(8px)}to{opacity:1; transform:none}}
+.msg .av{
+  width:34px;height:34px;border-radius:50%;flex:none;
+  background:linear-gradient(155deg,#13a08d,#0c8f7e);
+  display:flex;align-items:center;justify-content:center;
+}
+[data-mode="accident"] .msg.ai .av{background:linear-gradient(155deg,#cf7c36,#bd6a2a);}
+.msg .av svg{width:19px;height:19px;}
+.bubble{
+  padding:13px 16px; border-radius:20px; font-size:16.5px; line-height:1.66;
+  max-width:78%; white-space:pre-wrap; word-break:break-word;
+}
+.msg.ai .bubble{background:var(--surface); border-bottom-left-radius:7px; box-shadow:var(--shadow-soft);}
+.msg.user{flex-direction:row-reverse;}
+.msg.user .bubble{background:var(--accent); color:#fff; border-bottom-right-radius:7px;}
+.msg.user .av{background:#d3d6dc;}
+.msg.user .av svg{color:#6b6e76;}
+
+/* タイピング演出（AIが内容を整理しています…） */
+.typing .bubble{display:flex; align-items:center; gap:10px; color:var(--ink-2); font-size:15px;}
+.typing .dots{display:inline-flex; gap:4px;}
+.typing .dots i{width:7px;height:7px;border-radius:50%;background:var(--ink-3);animation:bounce 1.2s infinite;}
+.typing .dots i:nth-child(2){animation-delay:.18s}
+.typing .dots i:nth-child(3){animation-delay:.36s}
+@keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-5px);opacity:1}}
+
+/* 完成レポート（チャット内に出力されるカード群） */
+.report{align-self:stretch; max-width:100%; animation:rise .35s ease;}
+.report-head{
+  display:flex;align-items:center;gap:8px;margin:4px 4px 12px;color:var(--accent-ink);font-weight:700;font-size:15px;
+}
+.report-head svg{width:18px;height:18px;}
+.rcard{
+  background:var(--surface); border-radius:var(--r-md); box-shadow:var(--shadow-soft);
+  padding:16px 16px 14px; margin-bottom:12px;
+}
+.rcard .rc-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;}
+.rcard .rc-title{font-size:14px; font-weight:700; color:var(--accent-ink); letter-spacing:.03em;}
+.rcard .rc-body{font-size:16px; line-height:1.7; color:var(--ink); white-space:pre-wrap;}
+/* ⑤ AIによる参考案の注記 */
+.rc-disclaimer{
+  font-size:12px; color:var(--ink-3); background:var(--surface-2);
+  border-left:3px solid var(--line); padding:6px 10px; border-radius:0 6px 6px 0;
+  margin-bottom:10px; line-height:1.5;
+}
+.rcard textarea{
+  width:100%; border:1.5px solid var(--accent); border-radius:var(--r-sm);
+  padding:10px 12px; font-family:inherit; font-size:16px; line-height:1.7; color:var(--ink);
+  min-height:110px; resize:vertical; background:var(--surface-2);
+}
+.rc-actions{display:flex; gap:6px; margin-top:12px; flex-wrap:wrap;}
+.rc-actions .btn-chip{min-height:42px;}
+.rc-actions .btn-chip.primary{background:var(--accent); color:#fff; border-color:transparent;}
+
+/* 入力バー */
+.composer{
+  background:rgba(255,255,255,.92); backdrop-filter:saturate(180%) blur(20px);
+  border-top:1px solid var(--line);
+  padding:10px 12px calc(10px + env(safe-area-inset-bottom));
+  display:flex; align-items:flex-end; gap:8px;
+}
+.composer .field{
+  flex:1; display:flex; align-items:flex-end; background:var(--surface-2);
+  border:1px solid var(--line); border-radius:24px; padding:6px 6px 6px 16px; min-height:var(--tap);
+}
+.composer textarea{
+  flex:1; border:none; background:transparent; resize:none; outline:none;
+  font-family:inherit; font-size:16.5px; line-height:1.5; color:var(--ink);
+  max-height:140px; padding:11px 0; max-width:100%;
+}
+.composer textarea::placeholder{color:var(--ink-3);}
+.icon-btn{
+  width:46px;height:46px;border-radius:50%;border:none;flex:none;
+  display:flex;align-items:center;justify-content:center; background:transparent;
+  transition:background .15s ease, transform .12s ease;
+}
+.icon-btn:active{transform:scale(.92);}
+.icon-btn svg{width:24px;height:24px;}
+.mic{color:var(--accent-ink);}
+.mic.recording{background:var(--accent); color:#fff; animation:pulse 1.4s infinite;}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(12,143,126,.4)}70%{box-shadow:0 0 0 12px rgba(12,143,126,0)}100%{box-shadow:0 0 0 0 rgba(12,143,126,0)}}
+.send{background:var(--accent); color:#fff;}
+.send:disabled{background:#c7cad0;}
+
+/* ====================== サジェストバー（クイック選択肢） ====================== */
+/*
+ * AIが質問した内容に対応する定型選択肢チップを入力欄の直上に表示する。
+ * 複数スロットを同時に聞いた場合は、スロットごとにグループ化して並べる。
+ * 報告書完成時・初回挨拶時は非表示。
+ */
+/* ====================== チャット内インライン選択肢 ======================
+ * 1行横スクロールで収め、チャット本文を隠さないようにする
+ * ===================================================================== */
+.inline-suggests{
+  padding:0 16px 8px;
+  animation:rise .25s ease;
+}
+.inline-suggests-group{
+  margin-bottom:6px;
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.inline-suggests-group:last-child{ margin-bottom:0; }
+.inline-suggests-label{
+  font-size:11px; font-weight:700; color:var(--ink-3);
+  letter-spacing:.03em; white-space:nowrap; flex:none;
+}
+.inline-suggests-chips{
+  display:flex; gap:6px;
+  overflow-x:auto; -webkit-overflow-scrolling:touch;
+  /* スクロールバー非表示 */
+  scrollbar-width:none;
+}
+.inline-suggests-chips::-webkit-scrollbar{ display:none; }
+
+/* チップ: 1行に収まるコンパクトサイズ */
+.sug-chip{
+  min-height:34px; padding:0 13px;
+  border-radius:999px; border:1.5px solid var(--line);
+  background:var(--surface); color:var(--ink);
+  font-family:inherit; font-size:13px; font-weight:600;
+  display:inline-flex; align-items:center; flex:none;
+  transition:background .12s ease, border-color .12s ease, transform .1s ease;
+  cursor:pointer; white-space:nowrap;
+}
+.sug-chip:active{ transform:scale(.95); }
+.sug-chip.quick{
+  background:var(--accent-weak); border-color:transparent; color:var(--accent-ink);
+}
+.sug-chip.quick:active{ background:var(--accent); color:#fff; }
+
+/* ====================== 定型文編集ビュー ====================== */
+.sugg-edit{
+  flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  padding:max(20px,env(safe-area-inset-top)) 20px calc(28px + env(safe-area-inset-bottom));
+  display:flex; flex-direction:column; align-items:center;
+}
+.sugg-edit-inner{ width:100%; max-width:560px; }
+/* 各定型文行 */
+.sugg-row{
+  display:flex; align-items:center; gap:0;
+  border-top:1px solid var(--line-2); background:var(--surface);
+  min-height:var(--tap); overflow:hidden;
+}
+.sugg-row:first-child{ border-top:none; }
+/* 定番トグル（タップで quick オン/オフ） */
+.quick-toggle{
+  width:52px; min-height:var(--tap); flex:none; border:none; background:transparent;
+  display:flex; align-items:center; justify-content:center; cursor:pointer;
+}
+.quick-badge{
+  font-size:11px; font-weight:700; padding:3px 7px; border-radius:999px;
+  border:1.5px solid var(--line); color:var(--ink-3); background:transparent;
+  transition:all .15s ease; white-space:nowrap;
+}
+.quick-badge.on{
+  background:var(--accent-weak); border-color:transparent; color:var(--accent-ink);
+}
+/* ラベルテキスト / インライン編集 */
+.sugg-label{
+  flex:1; padding:0 4px; font-size:16px; color:var(--ink);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  min-height:var(--tap); display:flex; align-items:center;
+}
+.sugg-input{
+  flex:1; border:none; background:transparent; font-family:inherit;
+  font-size:16px; color:var(--ink); outline:none; padding:0 4px; min-width:0;
+  min-height:var(--tap);
+}
+.sugg-input::placeholder{ color:var(--ink-3); }
+/* 削除ボタン */
+.sugg-del{
+  width:44px; min-height:var(--tap); flex:none; border:none; background:transparent;
+  display:flex; align-items:center; justify-content:center; cursor:pointer;
+  color:#ff3b30; font-size:20px; font-weight:300;
+}
+/* リセットボタン */
+.sugg-reset{
+  width:100%; padding:14px 18px; font-size:14px; color:#ff3b30; font-weight:600;
+  background:transparent; border:none; border-top:1px solid var(--line-2);
+  text-align:center; cursor:pointer; font-family:inherit;
+}
+/* ====================== 利用者管理ビュー ====================== */
+.mgmt{
+  flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  padding:max(20px,env(safe-area-inset-top)) 20px calc(28px + env(safe-area-inset-bottom));
+  display:flex; flex-direction:column; align-items:center;
+}
+.mgmt-inner{ width:100%; max-width:560px; }
+/* 管理リスト行 */
+.mgmt-row{
+  display:flex; align-items:center;
+  border-top:1px solid var(--line-2); background:var(--surface);
+  min-height:var(--tap); overflow:hidden;
+}
+.mgmt-row:first-child{ border-top:none; }
+/* 削除ボタン（左端に常駐、open クラスで展開） */
+.del-btn{
+  flex:none; width:0; overflow:hidden; border:none;
+  background:#ff3b30; color:#fff; font-size:15px; font-weight:700;
+  display:flex; align-items:center; justify-content:center;
+  transition:width .2s ease; cursor:pointer; white-space:nowrap; min-height:var(--tap);
+}
+.del-btn.open{ width:76px; }
+/* 並び替えハンドル */
+.drag-handle{
+  width:44px; min-height:var(--tap); flex:none; border:none; background:transparent;
+  display:flex; align-items:center; justify-content:center;
+  color:var(--ink-3); cursor:grab; touch-action:none;
+}
+.drag-handle svg{ width:20px; height:20px; }
+/* 名前テキスト / 編集インプット */
+.mgmt-name{ flex:1; padding:0 4px; font-size:17px; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mgmt-input{
+  flex:1; border:none; background:transparent; font-family:inherit;
+  font-size:17px; color:var(--ink); outline:none; padding:0 4px; min-width:0;
+  min-height:var(--tap); display:flex; align-items:center;
+}
+.mgmt-input::placeholder{ color:var(--ink-3); }
+/* 「＋ 追加」行 */
+.add-row{
+  display:flex; align-items:center; gap:14px; padding:0 18px;
+  min-height:var(--tap); border-top:1px solid var(--line-2);
+  background:var(--surface); width:100%; text-align:left; border-left:none; border-right:none;
+  color:var(--accent-ink); font-size:17px; font-weight:600;
+}
+.add-row svg{ width:22px; height:22px; }
+/* ドラッグ中 */
+.mgmt-row.dragging{ opacity:.45; box-shadow:var(--shadow); }
+.mgmt-row.drag-over{ border-top:2px solid var(--accent); }
+/* 空状態 */
+.empty-hint{ padding:32px 0; text-align:center; color:var(--ink-3); font-size:15px; }
+
+/* ====================== PINロックモーダル ====================== */
+.pin-overlay{
+  position:fixed; inset:0; z-index:100;
+  background:rgba(0,0,0,.45); backdrop-filter:blur(8px);
+  display:flex; align-items:flex-end; justify-content:center;
+  opacity:0; pointer-events:none; transition:opacity .2s ease;
+}
+.pin-overlay.show{ opacity:1; pointer-events:auto; }
+.pin-sheet{
+  background:var(--surface); border-radius:var(--r-lg) var(--r-lg) 0 0;
+  width:100%; max-width:400px;
+  padding:24px 20px calc(24px + env(safe-area-inset-bottom,0px));
+  transform:translateY(24px); transition:transform .25s cubic-bezier(.4,0,.2,1);
+}
+.pin-overlay.show .pin-sheet{ transform:translateY(0); }
+.pin-title{ text-align:center; font-size:17px; font-weight:700; color:var(--ink); margin-bottom:6px; }
+.pin-sub{ text-align:center; font-size:14px; color:var(--ink-3); margin-bottom:20px; }
+/* 入力ドット */
+.pin-dots{ display:flex; justify-content:center; gap:16px; margin-bottom:24px; }
+.pin-dot{
+  width:14px; height:14px; border-radius:50%;
+  border:2px solid var(--line); background:transparent;
+  transition:background .15s ease, border-color .15s ease;
+}
+.pin-dot.filled{ background:var(--accent); border-color:var(--accent); }
+.pin-dot.error { background:#ff3b30; border-color:#ff3b30; animation:shake .4s ease; }
+@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-5px)}40%,80%{transform:translateX(5px)}}
+/* 数字パッド */
+.pin-pad{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+.pin-key{
+  height:58px; border-radius:var(--r-md); border:none;
+  background:var(--surface-2); color:var(--ink);
+  font-size:22px; font-weight:500; font-family:inherit;
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer; transition:background .1s ease, transform .1s ease;
+}
+.pin-key:active{ background:var(--line); transform:scale(.95); }
+.pin-key.del{ font-size:18px; color:var(--ink-2); }
+.pin-key.cancel{ font-size:15px; font-weight:600; color:var(--ink-2); }
+.pin-key.empty{ background:transparent; pointer-events:none; }
+/* トースト */
+.toast{
+  position:fixed; left:50%; bottom:calc(96px + env(safe-area-inset-bottom)); transform:translateX(-50%) translateY(20px);
+  background:rgba(28,28,30,.94); color:#fff; padding:12px 20px; border-radius:14px;
+  font-size:15px; font-weight:600; opacity:0; pointer-events:none; transition:all .25s ease; z-index:50;
+}
+.toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+
+/* ビュー切替 */
+.view{display:none; flex:1; min-height:0; flex-direction:column;}
+.view.active{display:flex;}
+
+/* ===== 広い画面（iPad横向き）: 取得済み情報を右サイドに ===== */
+@media (min-width:900px){
+  .chat.with-side .chat-body{display:flex; min-height:0; flex:1;}
+  .chat.with-side .messages{flex:1;}
+  .chat.with-side .infobar{
+    order:2; width:320px; border-bottom:none; border-left:1px solid var(--line);
+    overflow-y:auto;
+  }
+  .chat.with-side .pills{flex-direction:column; overflow:visible;}
+  .chat.with-side .pill{width:100%;}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation:none !important; transition:none !important;}
+}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ============ ホーム画面 ============ -->
+  <section class="view active home" id="view-home">
+    <div class="home-inner">
+      <div class="brand">
+        <div class="mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M12 21s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 5.6-7 10-7 10Z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></svg>
+        </div>
+        <h1>介護AI Assistant</h1>
+        <p>話すだけで、記録ができあがる。</p>
+      </div>
+
+      <div class="group" id="group-user-select" style="display:none;" aria-hidden="true">
+        <div class="group-label" style="display:flex;align-items:center;justify-content:space-between;padding-right:4px;">
+          利用者選択
+          <button id="edit-users-btn" style="font-size:15px;font-weight:600;color:var(--accent-ink);background:none;border:none;padding:4px 8px;cursor:pointer;">編集</button>
+        </div>
+        <div class="card-list">
+          <div class="row select-wrap" style="padding:0;">
+            <div class="row-ic" aria-hidden="true" style="margin:0 0 0 18px;">
+              <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.4" stroke="currentColor" stroke-width="1.8"/><path d="M5 19.5a7 7 0 0 1 14 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            </div>
+            <select id="user-select" aria-label="利用者を選択"></select>
+          </div>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-label">入力種別</div>
+        <div class="card-list" id="agent-list"><!-- JSで描画 --></div>
+      </div>
+
+      <div class="home-cta">
+        <button class="btn btn-primary" id="start-btn">
+          会話をはじめる
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button id="open-sugg-btn" style="width:100%;margin-top:10px;height:48px;border-radius:var(--r-md);border:1.5px solid var(--line);background:var(--surface);color:var(--accent-ink);font-size:15px;font-weight:600;font-family:inherit;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          ワンタッチ定型文を編集
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 定型文編集ビュー ============ -->
+  <section class="view sugg-edit" id="view-sugg-edit">
+    <div class="sugg-edit-inner">
+      <div class="group" style="margin-top:8px;">
+        <div class="group-label" style="display:flex;align-items:center;justify-content:space-between;padding-right:4px;">
+          ワンタッチ定型文
+          <button id="sugg-done-btn" style="font-size:15px;font-weight:600;color:var(--accent-ink);background:none;border:none;padding:4px 8px;cursor:pointer;">完了</button>
+        </div>
+        <div id="sugg-agent-tabs" style="display:flex;gap:0;background:var(--surface);border-radius:var(--r-lg) var(--r-lg) 0 0;overflow:hidden;border-bottom:1px solid var(--line-2);">
+          <!-- タブはJSで描画 -->
+        </div>
+        <div id="sugg-edit-list"><!-- JSで描画 --></div>
+      </div>
+      <p style="font-size:13px;color:var(--ink-3);padding:4px 16px 0;">
+        ラベルをタップして編集 / 「定番」で色付きチップに / ✕で削除
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ 利用者管理ビュー ============ -->
+  <section class="view mgmt" id="view-mgmt">
+    <div class="mgmt-inner">
+      <div class="group" style="margin-top:8px;">
+        <div class="group-label" style="display:flex;align-items:center;justify-content:space-between;padding-right:4px;">
+          利用者リスト
+          <button id="mgmt-done-btn" style="font-size:15px;font-weight:600;color:var(--accent-ink);background:none;border:none;padding:4px 8px;cursor:pointer;">完了</button>
+        </div>
+        <div class="card-list" id="mgmt-list"><!-- JSで描画 --></div>
+      </div>
+      <p style="font-size:13px;color:var(--ink-3);padding:4px 16px 0;">名前をタップして編集、左端の — をタップで削除、⋮⋮ を長押しで並び替え</p>
+    </div>
+  </section>
+
+  <!-- ============ チャット画面 ============ -->
+  <section class="view chat" id="view-chat">
+    <header class="appbar">
+      <button class="back" id="back-btn" aria-label="ホームに戻る">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        記録一覧
+      </button>
+      <div class="title">
+        <div class="t" id="chat-title">通常記録AI</div>
+        <div class="s" id="chat-user">京町亭 様</div>
+      </div>
+      <span class="mode-badge" id="mode-badge">通常記録</span>
+    </header>
+
+    <div class="chat-body">
+      <div class="messages" id="messages"></div>
+
+      <!-- 取得済み情報: メッセージ領域の下・入力欄の上（グレーエリア）に展開 -->
+      <div class="infobar" id="infobar">
+        <!-- 展開パネル（通常フロー・下向き、グレーエリアを埋める） -->
+        <div class="infobar-panel" id="infobar-panel" role="region" aria-label="取得済み情報詳細">
+          <div class="pills" id="pills"></div>
+        </div>
+        <!-- 常時表示の1行ハンドルバー -->
+        <div class="infobar-bar" id="infobar-bar" role="button" aria-expanded="false" aria-controls="infobar-panel">
+          <div class="bar-left">
+            <span class="bar-label">取得済み情報</span>
+            <span class="bar-prog" id="info-prog">0 / 0</span>
+          </div>
+          <div class="bar-dots" id="bar-dots" aria-hidden="true"></div>
+          <span class="bar-chevron" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" width="18" height="18">
+              <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- サジェスト選択肢はチャット内に表示（#inline-suggests） -->
+
+    <!-- 入力欄 -->
+    <div class="composer">
+      <button class="icon-btn mic" id="mic-btn" aria-label="音声入力">
+        <svg viewBox="0 0 24 24" fill="none"><rect x="9" y="3" width="6" height="11" rx="3" stroke="currentColor" stroke-width="1.8"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+      <div class="field">
+        <textarea id="input" rows="1" placeholder="様子を話す / 入力する" enterkeyhint="send"></textarea>
+      </div>
+      <button class="icon-btn send" id="send-btn" aria-label="送信" disabled>
+        <svg viewBox="0 0 24 24" fill="none"><path d="M5 12h13M12 5l7 7-7 7" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+  </section>
+
+  <div class="toast" id="toast"></div>
+
+  <!-- PINロックモーダル -->
+  <div class="pin-overlay" id="pin-overlay" role="dialog" aria-modal="true" aria-label="パスワード入力">
+    <div class="pin-sheet">
+      <div class="pin-title">パスワードを入力</div>
+      <div class="pin-sub">定型文編集にはパスワードが必要です</div>
+      <div class="pin-dots" id="pin-dots">
+        <div class="pin-dot" id="pin-d0"></div>
+        <div class="pin-dot" id="pin-d1"></div>
+        <div class="pin-dot" id="pin-d2"></div>
+        <div class="pin-dot" id="pin-d3"></div>
+      </div>
+      <div class="pin-pad">
+        <!-- 1〜9 -->
+        <button class="pin-key" data-n="1">1</button>
+        <button class="pin-key" data-n="2">2</button>
+        <button class="pin-key" data-n="3">3</button>
+        <button class="pin-key" data-n="4">4</button>
+        <button class="pin-key" data-n="5">5</button>
+        <button class="pin-key" data-n="6">6</button>
+        <button class="pin-key" data-n="7">7</button>
+        <button class="pin-key" data-n="8">8</button>
+        <button class="pin-key" data-n="9">9</button>
+        <!-- 最下行: キャンセル / 0 / 削除 -->
+        <button class="pin-key cancel" id="pin-cancel">キャンセル</button>
+        <button class="pin-key" data-n="0">0</button>
+        <button class="pin-key del" id="pin-del">⌫</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* =====================================================================
+ *  介護AI Assistant — Ver1 プロトタイプ
+ *
+ *  【設計方針】
+ *  会話画面は共通。業務ロジック(Agent)とAIエンジン(AIService)を分離し、
+ *  将来 申し送り/家族連絡/支援経過AI や OpenAI/Claude/Gemini API を
+ *  「差し替えるだけ」で追加できるようにしている。
+ *
+ *  本ファイルは1ファイルで動くプロトタイプだが、内部は将来の
+ *  ファイル分割を想定して以下の論理モジュールに区切ってある:
+ *
+ *    services/AIService.js      … AIエンジンの抽象インターフェース
+ *    services/MockAIService.js  … Ver1のルールベース実装(API不要)
+ *    agents/*.js                … 業務ごとの知識(スロット/プロンプト/生成)
+ *    components/*.js            … ChatView / InfoBar / ReportCards 等のUI
+ *    app.js                     … 画面遷移・状態管理
+ * ===================================================================== */
+
+
+/* =====================================================================
+ *  [services/AIService.js]
+ *  AIエンジンの抽象基底クラス。実装はこのインターフェースに従う。
+ *  本番では OpenAIService / ClaudeService 等がこれを継承し、respond() 内で
+ *  agent.systemPrompt と会話履歴からプロンプトを組み立ててAPIを呼ぶ。
+ * ===================================================================== */
+class AIService {
+  /**
+   * 1ターン分の応答を返す。
+   * @param {Object} ctx
+   *   ctx.agent    … 対象Agent(業務知識)
+   *   ctx.history  … [{role:'ai'|'user', text}]
+   *   ctx.message  … 直近のユーザー発話
+   *   ctx.slots    … 現在の取得済み情報 {key: {filled, value}}
+   * @returns {Promise<{reply, slots, complete, report}>}
+   */
+  async respond(ctx) { throw new Error("respond() must be implemented"); }
+}
+
+/* ---- 本番接続のひな形（コメント。実装すれば即差し替え可能） ----
+class OpenAIService extends AIService {
+  constructor(apiKey){ super(); this.apiKey = apiKey; }
+  async respond(ctx){
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method:"POST",
+      headers:{ "Content-Type":"application/json", "Authorization":`Bearer ${this.apiKey}` },
+      body: JSON.stringify({
+        model:"gpt-4o",
+        response_format:{ type:"json_object" },
+        messages:[
+          { role:"system", content: ctx.agent.systemPrompt },
+          ...ctx.history.map(m => ({ role: m.role==="ai"?"assistant":"user", content:m.text })),
+        ],
+      }),
+    });
+    const data = await res.json();
+    // モデルには {reply, slots, complete, report} のJSONで返すよう指示する
+    return JSON.parse(data.choices[0].message.content);
+  }
+}
+------------------------------------------------------------------- */
+
+
+/* =====================================================================
+ *  [services/MockAIService.js]
+ *  Ver1のAIエンジン。API無しで「会話理解 → 不足質問 → 文章生成」を再現する
+ *  ルールベース実装。各Agentが宣言したスロット定義(detect)と生成関数
+ *  (generators)を用いて動作するため、エンジン側は業務に依存しない。
+ * ===================================================================== */
+class MockAIService extends AIService {
+  async respond(ctx){
+    const { agent, message, slots } = ctx;
+
+    // 1) 発話から情報を抽出し、スロットを更新
+    const updated = this._extract(agent, message, slots);
+
+    // 2) 今回のターンで新たに取得できた項目を収集（④ 復唱用）
+    const newlyFilled = agent.slots.filter(
+      s => updated[s.key]?.filled && !slots[s.key]?.filled
+    );
+
+    // 3) 不足している必須スロットを算出
+    const missing = agent.slots.filter(s => s.required && !updated[s.key]?.filled);
+
+    // 4a) 全必須が揃った → 完成
+    if (missing.length === 0) {
+      return {
+        slots: updated, complete: true,
+        reply: agent.completionMessage,
+        report: agent.generateReport(updated),
+        newlyFilled,
+      };
+    }
+
+    // 4b) 未取得あり → 復唱（あれば） + 次の不足分だけ質問
+    return {
+      slots: updated, complete: false,
+      reply: this._composeReply(agent, updated, missing, newlyFilled),
+      report: null,
+      newlyFilled,
+    };
+  }
+
+  /** 各スロットのdetect関数を回し、新たに取れた情報を反映 */
+  _extract(agent, text, slots){
+    const next = { ...slots };
+    for (const s of agent.slots){
+      // accumulate:true スロットは発話を全件蓄積（通常記録の rawテキスト用）
+      if (s.accumulate){
+        const prev = next[s.key]?.value || "";
+        next[s.key] = { filled:true, value: prev ? prev + "\n" + text : text };
+        continue;
+      }
+      if (next[s.key]?.filled) continue;
+      if (s.detect) {
+        const value = s.detect(text);
+        if (value) next[s.key] = { filled:true, value };
+      }
+    }
+    return next;
+  }
+
+  /**
+   * ④ 返答を組み立てる
+   * - 新規取得があれば「〇〇を確認しました。」と一言復唱
+   * - その後、次に必要な項目だけ番号付きでまとめて質問
+   */
+  _composeReply(agent, slots, missing, newlyFilled){
+    const parts = [];
+
+    // 復唱（新規取得した項目を箇条書きで一言ずつ）
+    if (newlyFilled.length > 0){
+      const confirms = newlyFilled
+        .map(s => `「${s.label}：${slots[s.key].value}」を確認しました。`)
+        .join("\n");
+      parts.push(confirms);
+    }
+
+    // まだ何も取れていない（初回）
+    if (newlyFilled.length === 0 && agent.slots.filter(s=>slots[s.key]?.filled).length === 0){
+      parts.push(agent.firstPrompt);
+    }
+
+    // 不足分を番号付きで質問（最大3項目まとめて）
+    const ask = missing.slice(0, 3);
+    const qs = ask.map((s, i) => `${"①②③④⑤⑥".charAt(i)} ${s.question}`).join("\n");
+    if (qs) parts.push(qs);
+
+    return parts.join("\n\n");
+  }
+}
+
+
+/* =====================================================================
+ *  [agents/BaseAgent.js]
+ *  全Agent共通の足場。slots(スロット定義)とメッセージ群、生成関数を持つ。
+ *  新しい業務AIを追加する時は、このクラスを継承してslots/プロンプト/
+ *  generateReport を定義するだけでよい。
+ * ===================================================================== */
+class BaseAgent {
+  constructor(config){
+    Object.assign(this, config);
+    // generators: セクションごとに複数バリアントを持ち、再生成で切替える
+    this._variantIndex = {};
+  }
+  /** 再生成: 同セクションの次のバリアント文面を返す */
+  regenerate(sectionKey, slots){
+    const variants = this.generators[sectionKey];
+    const cur = this._variantIndex[sectionKey] ?? 0;
+    const next = (cur + 1) % variants.length;
+    this._variantIndex[sectionKey] = next;
+    return variants[next](slots);
+  }
+  generateReport(slots){
+    return this.sections.map(sec => ({
+      key: sec.key,
+      title: sec.title,
+      body: this.generators[sec.key][this._variantIndex[sec.key] ?? 0](slots),
+    }));
+  }
+}
+
+
+/* ===== 抽出ユーティリティ（Agent定義から使う共通ヘルパ） ===== */
+const Detect = {
+  /** いずれかのキーワードを含めば、代表ラベルを返す */
+  anyOf(text, map){
+    for (const [label, kws] of Object.entries(map)){
+      if (kws.some(k => text.includes(k))) return label;
+    }
+    return null;
+  },
+  /** 最初にヒットしたキーワードそのものを返す（自由語の捕捉） */
+  firstHit(text, kws){
+    const hit = kws.find(k => text.includes(k));
+    return hit || null;
+  },
+};
+
+// 身体部位（受傷部位の抽出に使用）
+const BODY_PARTS = ["頭部","頭","額","顔面","顔","目","鼻","口","歯","首","肩","上腕","前腕","肘","ひじ","手首","手の甲","手","指","胸","腹","腰","背中","臀部","尻","大腿","膝","ひざ","下腿","すね","脛","足首","足","踵","かかと"];
+
+/** 対応語の表記を記録向けに整える（例：バイタル → バイタル測定） */
+function normalizeAction(v){
+  if (!v) return v;
+  const map = { "バイタル":"バイタル測定", "冷やし":"冷罨法", "付き添":"付き添い", "声かけ":"声かけ" };
+  return map[v] || v;
+}
+
+
+/* =====================================================================
+ *  [agents/AccidentReportAgent.js]
+ *  事故報告書AI。会話から 事故種別/日時/場所/怪我/対応/報告先 を抽出し、
+ *  揃ったら 状況・対応・要因原因・事故防止対策 の4カードを生成する。
+ * ===================================================================== */
+const accidentAgent = new BaseAgent({
+  id:"accident",
+  name:"事故報告書AI",
+  badge:"事故報告",
+  mode:"accident",
+  // ② 案内文を変更
+  greeting:"こんにちは。事故報告書に記載する参考文章を作成します。\n取得情報の順番を参考に、分かる範囲でお話しください。",
+  firstPrompt:"いつ、どこで、どのような状況だったか教えてください。",
+  completionMessage:"必要な情報が揃いました。参考文章を作成しました。各項目はそのまま編集・再生成・コピーできます。",
+  copyPerSection:true,
+
+  systemPrompt:`あなたは介護施設の事故報告書作成を支援するAIです。介護士の自由な語りから事故情報を抽出し、不足情報だけをまとめて質問します。固定の質問リストは使わないでください。報告書本文は常体で時系列、語られた事実のみを記載し推測を含めないこと。要因・原因は断定せず「可能性があります」「考えられます」「確認が必要です」を用いること。事故防止対策は「注意する」等の抽象表現を禁止し、具体的な行動を記載すること。出力は {reply, slots, complete, report} のJSONとすること。`,
+
+  // ---- ① 表示順: 日時→場所→利用者→事故種別→怪我→対応 ----
+  slots:[
+    { key:"datetime", label:"日時", required:true,
+      question:"何時頃でしたか？",
+      suggestions:[
+        { label:"朝食後", quick:true },
+        { label:"昼食後", quick:true },
+        { label:"夕食後", quick:true },
+        { label:"午前中" },
+        { label:"午後" },
+        { label:"夜間" },
+        { label:"就寝前" },
+      ],
+      detect:(t)=>{
+        const m = t.match(/(午前|午後)?\s*\d{1,2}\s*[:：]\s*\d{1,2}/) || t.match(/\d{1,2}\s*時(\d{1,2}分)?/);
+        if (m) return m[0].replace(/\s/g,"") + "頃";
+        return Detect.firstHit(t,["早朝","起床時","朝食前","朝食後","午前中","昼食前","昼食後","おやつ時間","夕食前","夕食後","就寝前","夜間","明け方","朝","昼","夕方","夜"]);
+      } },
+
+    { key:"place", label:"場所", required:true,
+      question:"どこで発生しましたか？",
+      suggestions:[
+        { label:"居室", quick:true },
+        { label:"廊下", quick:true },
+        { label:"トイレ", quick:true },
+        { label:"食堂", quick:true },
+        { label:"浴室" },
+        { label:"ベッドサイド" },
+        { label:"ホール" },
+      ],
+      detect:(t)=>Detect.firstHit(t,["居室","自室","部屋","廊下","トイレ","洗面所","浴室","脱衣所","風呂","食堂","ホール","リビング","デイルーム","機能訓練室","玄関","ベッドサイド","ベッド","階段","エレベーター","ナースステーション"]) },
+
+    { key:"type", label:"事故種別", required:true,
+      question:"どのような事故でしたか？",
+      suggestions:[
+        { label:"転倒", quick:true },
+        { label:"転落", quick:true },
+        { label:"誤嚥", quick:true },
+        { label:"誤薬", quick:true },
+        { label:"皮膚剥離", quick:true },
+        { label:"その他" },
+      ],
+      detect:(t)=>Detect.anyOf(t,{
+        "転倒":["転倒","転んだ","ころん","倒れ","つまず","滑っ","ふらつ","しりもち","尻もち"],
+        "転落":["転落","落ち","ずり落ち","ずれ落ち","ベッドから","車椅子から","車いすから"],
+        "誤嚥":["誤嚥","むせ","のどに","喉に","詰ま","咳き込"],
+        "誤薬":["誤薬","薬を間違","与薬ミス","服薬ミス","飲み忘れ"],
+        "皮膚剥離":["剥離","スキンテア","表皮","皮膚が裂"],
+        "ぶつかり":["ぶつかっ","衝突","接触事故"],
+      }) },
+
+    { key:"discovery", label:"発見時の状況", required:true,
+      question:"発見した時の状況を教えてください。",
+      suggestions:[
+        { label:"床に倒れている状態で発見", quick:true },
+        { label:"呼びかけに反応あり", quick:true },
+        { label:"自力で起き上がれず", quick:true },
+        { label:"ベッドから転落した状態", quick:false },
+        { label:"うずくまっている状態", quick:false },
+        { label:"意識あり・会話可能", quick:false },
+      ],
+      detect:(t)=>{
+        if (/(床|フロア).{0,6}(倒れ|転倒|横たわ)/.test(t)) return "床に倒れている状態で発見";
+        if (/呼びかけ.{0,6}(反応|答え|応答)/.test(t)) return "呼びかけに反応あり";
+        if (/(自力|一人).{0,6}(起き上がれ|立て)/.test(t)) return "自力で起き上がれず";
+        if (/意識.{0,4}(あり|はっきり|明瞭)/.test(t)) return "意識あり・会話可能";
+        if (/うずくまり|座り込|しゃがみ込/.test(t)) return "うずくまっている状態";
+        return Detect.firstHit(t,["発見","倒れていた","倒れている","横たわ","うずくまっ","座り込","呼びかけ"]);
+      } },
+
+    { key:"injury", label:"怪我", required:true,
+      question:"お怪我の有無・部位を教えてください。",
+      suggestions:[
+        { label:"外傷なし", quick:true },
+        { label:"頭部打撲", quick:true },
+        { label:"手の打撲" },
+        { label:"膝の擦過傷" },
+        { label:"肘の内出血" },
+        { label:"腰の痛み" },
+        { label:"骨折疑い" },
+      ],
+      detect:(t)=>{
+        if (/(外傷|怪我|けが|ケガ).{0,4}(無|な|ない|なし)/.test(t) || t.includes("怪我なし") || t==="外傷なし") return "外傷なし";
+        const part = BODY_PARTS.find(p => t.includes(p));
+        const kind = Detect.firstHit(t,["骨折","出血","内出血","あざ","腫れ","擦過傷","擦り傷","切り傷","打撲","発赤","たんこぶ","痛み"]);
+        if (part && kind) return `${part}の${kind}`;
+        if (part) return `${part}を受傷`;
+        if (kind) return kind;
+        return null;
+      } },
+
+    { key:"response", label:"対応", required:true,
+      question:"その後の対応を教えてください。",
+      suggestions:[
+        { label:"バイタル測定・様子観察", quick:true },
+        { label:"様子観察", quick:true },
+        { label:"受診", quick:true },
+        { label:"救急搬送" },
+        { label:"止血・処置" },
+        { label:"安静臥床" },
+      ],
+      detect:(t)=>Detect.firstHit(t,["バイタル測定","バイタル","受診","救急搬送","救急","止血","冷罨法","冷やし","軟膏","ガーゼ","処置","様子観察","安静","臥床","状態を確認","患部を確認","声かけ","付き添"]) },
+
+    // 報告先: 対応の直後に配置・パネルに表示する必須スロット
+    { key:"reportTo", label:"報告先", required:true,
+      question:"どなたに報告されましたか？",
+      suggestions:[
+        { label:"看護師", quick:true },
+        { label:"主任・リーダー", quick:true },
+        { label:"管理者", quick:true },
+        { label:"家族", quick:true },
+        { label:"医師" },
+        { label:"相談員" },
+      ],
+      detect:(t)=>Detect.firstHit(t,["看護師","ナース","主任","リーダー","管理者","施設長","相談員","ケアマネ","医師","ドクター","家族","ご家族"]) },
+  ],
+
+  // ---- 完成カードの構成 ----
+  sections:[
+    { key:"situation",  title:"状況" },
+    { key:"action",     title:"対応" },
+    { key:"cause",      title:"要因・原因",    disclaimer:true },  // ⑤ 注記あり
+    { key:"prevention", title:"事故防止対策",  disclaimer:true },  // ⑤ 注記あり
+  ],
+
+  // ---- セクション別 文章生成（各2バリアント: 再生成で切替） ----
+  generators:{
+    situation:[
+      (s)=>{
+        const dt = s.datetime?.value, pl = s.place?.value, ty = s.type?.value;
+        const ij = s.injury?.value, dc = s.discovery?.value;
+        const verb = {"転倒":"転倒される","転落":"転落される","誤嚥":"誤嚥される","誤薬":"誤薬が発生","皮膚剥離":"皮膚剥離が発生","ぶつかり":"接触される"}[ty] || "事故が発生";
+        let out = `${dt||"時間不明"}、${pl||"場所不明"}にて${verb}。`;
+        if (dc) out += `発見時、${dc}。`;
+        if (ij && ij!=="外傷なし") out += `${ij}が認められる。`;
+        else if (ij==="外傷なし") out += `外傷は認められず。`;
+        return out;
+      },
+      (s)=>{
+        const dt = s.datetime?.value, pl = s.place?.value, ty = s.type?.value;
+        const ij = s.injury?.value, dc = s.discovery?.value;
+        let out = `${pl||"場所不明"}において、${dt||"時間不明"}に${ty||"事故"}が発生。`;
+        if (dc) out += `${dc}。`;
+        out += (ij && ij!=="外傷なし") ? `${ij}を確認。` : `外傷の訴えなし。`;
+        return out;
+      },
+    ],
+    action:[
+      (s)=>{
+        const rs = normalizeAction(s.response?.value), to = s.reportTo?.value;
+        let out = rs ? `${rs}を実施。` : `状態を確認。`;
+        if (to) out += `${to}へ報告。`;
+        return out;
+      },
+      (s)=>{
+        const rs = normalizeAction(s.response?.value), to = s.reportTo?.value;
+        const parts = [];
+        if (rs) parts.push(rs);
+        parts.push(to ? `${to}へ報告し情報共有` : `経過を記録`);
+        return parts.join("、") + "。";
+      },
+    ],
+    cause:[
+      (s)=>{
+        const ty = s.type?.value;
+        const base = {
+          "転倒":"立ち上がりや移動時のバランス低下、下肢筋力の低下が要因となった可能性がある。",
+          "転落":"端座位や移乗時の姿勢の崩れ、見守り体制の隙が要因となった可能性がある。",
+          "誤嚥":"嚥下機能の低下や食事形態・姿勢が要因となった可能性がある。",
+        }[ty] || "複数の要因が重なって発生した可能性がある。";
+        return `${base}\n発生時の${s.place?.value||"環境"}の状況や履物・福祉用具の使用状況についても確認が必要。`;
+      },
+      (s)=>{
+        const ty = s.type?.value;
+        const factor = {"転倒":"下肢筋力やふらつき","転落":"移乗動作や姿勢保持","誤嚥":"嚥下状態や食事姿勢"}[ty] || "心身の状態";
+        return `${factor}の影響が考えられる。\n直前の行動や声かけの有無、見守りの間隔についても確認が必要。`;
+      },
+    ],
+    prevention:[
+      (s)=>{
+        const ty = s.type?.value;
+        const items = {
+          "転倒":["立ち上がり時は職員が付き添う","移動時は歩行器の使用を確認する","食後5分間は見守りを実施する","本事例を職員間で申し送り、共有する"],
+          "転落":["移乗時は2名対応または見守りを行う","ベッド・車椅子の位置と固定を確認する","離床センサーの設置を検討する","危険な時間帯を申し送りで共有する"],
+          "誤嚥":["食事形態を見直し、適切なとろみを付与する","食事時は椅子に深く腰掛けた姿勢を整える","一口量を調整し、ペースを職員が確認する","食後30分は座位を保持する"],
+        }[ty] || ["発生状況を再現し、環境面のリスクを点検する","見守り体制と職員配置を見直す","本人の状態変化を記録し共有する","再発防止策を職員会議で検討する"];
+        return items.map(i=>`・${i}`).join("\n");
+      },
+      (s)=>{
+        const ty = s.type?.value;
+        const items = {
+          "転倒":["居室〜トイレ間の動線の障害物を除去する","夜間はセンサーマットで起き上がりを把握する","履物を滑りにくいものへ変更する","ケアプランに転倒リスクを反映する"],
+          "転落":["ベッド柵の本数と位置を再設定する","低床ベッドへの変更を検討する","定時の巡視間隔を短縮する","移乗手順を統一しチームで共有する"],
+          "誤嚥":["言語聴覚士へ嚥下評価を依頼する","水分にとろみを付け誤嚥を防ぐ","食事介助の手順を統一する","急変時の対応手順を掲示する"],
+        }[ty] || ["ヒヤリハットとして全体共有する","環境整備のチェック項目を追加する","対象者の見守りレベルを再設定する","対策の実施状況を定期的に評価する"];
+        return items.map(i=>`・${i}`).join("\n");
+      },
+    ],
+  },
+});
+
+
+/* =====================================================================
+ *  [agents/NormalRecordAgent.js]
+ *  通常記録AI。日々の様子の語りから観点を抽出し、CAREKARTE向けの
+ *  介護記録（常体・時系列）を1枚にまとめる。
+ * ===================================================================== */
+const normalAgent = new BaseAgent({
+  id:"normal",
+  name:"通常記録AI",
+  badge:"通常記録",
+  mode:"normal",
+  greeting:"こんにちは。今日の利用者様のご様子を、自由にお話しください。",
+  firstPrompt:"承知しました。今日のご様子を教えてください。",
+  completionMessage:"記録を作成しました。内容を確認し、CAREKARTEへコピーしてください。",
+  copyPerSection:false,
+  copyLabel:"CAREKARTEへコピー",
+
+  systemPrompt:`あなたは介護記録の作成を支援するAIです。介護士の語りから事実のみを抽出し、常体・時系列の介護記録を生成します。推測や敬体は用いないこと。情報が少ない場合のみ簡潔に補足を質問すること。`,
+
+  // 通常記録は「少なくとも1観点 + ある程度の情報量」で生成に進む
+  slots:[
+    // raw: 介護士の発話を全件蓄積する隠しスロット（記録生成に使う）
+    { key:"raw", label:"", required:false, hidden:true, accumulate:true,
+      detect:()=>null },
+    { key:"meal", label:"食事", required:false,
+      suggestions:[
+        { label:"完食", quick:true },
+        { label:"半量摂取", quick:true },
+        { label:"食欲不振" },
+        { label:"経口摂取困難" },
+      ],
+      detect:(t)=>Detect.firstHit(t,["朝食","昼食","夕食","完食","食事","主食","副食","摂取"]) },
+    { key:"hydration", label:"水分", required:false,
+      suggestions:[
+        { label:"水分摂取良好", quick:true },
+        { label:"水分摂取少量" },
+        { label:"拒否あり" },
+      ],
+      detect:(t)=>Detect.firstHit(t,["水分","お茶","飲水","摂水","脱水"]) },
+    { key:"excretion", label:"排泄", required:false,
+      suggestions:[
+        { label:"トイレ自立", quick:true },
+        { label:"一部介助", quick:true },
+        { label:"失禁あり" },
+        { label:"排泄なし" },
+      ],
+      detect:(t)=>Detect.firstHit(t,["排泄","排尿","排便","トイレ","失禁","おむつ","オムツ"]) },
+    { key:"bath", label:"入浴", required:false,
+      suggestions:[
+        { label:"入浴実施", quick:true },
+        { label:"シャワー浴", quick:true },
+        { label:"清拭実施" },
+        { label:"入浴拒否" },
+      ],
+      detect:(t)=>Detect.firstHit(t,["入浴","シャワー","清拭","お風呂"]) },
+    { key:"activity", label:"活動", required:false,
+      suggestions:[
+        { label:"レク参加", quick:true },
+        { label:"散歩実施", quick:true },
+        { label:"体操参加" },
+        { label:"居室で過ごす" },
+      ],
+      detect:(t)=>Detect.firstHit(t,["レク","レクリエーション","散歩","体操","活動","参加","リハビリ","機能訓練"]) },
+    { key:"condition", label:"様子", required:false,
+      suggestions:[
+        { label:"表情穏やか", quick:true },
+        { label:"笑顔あり", quick:true },
+        { label:"傾眠傾向" },
+        { label:"訴えあり" },
+        { label:"発熱あり" },
+      ],
+      detect:(t)=>Detect.firstHit(t,["笑顔","穏やか","傾眠","発熱","体温","血圧","表情","痛み","元気","活気","落ち着"]) },
+  ],
+
+  sections:[ { key:"record", title:"記録" } ],
+
+  generators:{
+    record:[
+      (s)=>buildNormalRecord(s, false),
+      (s)=>buildNormalRecord(s, true),
+    ],
+  },
+
+  shouldComplete(slots, lastMessage){
+    const filled = this.slots.filter(s => !s.hidden && slots[s.key]?.filled).length;
+    return filled >= 1 && lastMessage.length >= 10;
+  },
+});
+
+/**
+ * 通常記録生成
+ * rawスロットに蓄積された介護士の発話テキストをベースに
+ * 介護記録らしい常体・時系列の文章を組み立てる。
+ * variant=true で文末表現を微妙に変えて再生成に対応。
+ */
+/* =====================================================================
+ * 通常記録 文章生成エンジン（APIなし・ルールベース強化版）
+ *
+ * 処理の流れ:
+ *   1. 発話を文に分割
+ *   2. 口語→記録語 語彙正規化
+ *   3. 敬体→常体 変換
+ *   4. 話題別（食事/水分/排泄/入浴/活動/様子/バイタル）に分類・整形
+ *   5. 介護記録として自然な順序で結合
+ * ===================================================================== */
+
+/* ---- 語彙辞書: 口語 → 記録語 ---- */
+const CARE_VOCAB = [
+  // 食事
+  [/ご飯|ごはん|お食事/g,     "食事"],
+  [/おかず|副菜/g,             "副食"],
+  [/完食|全部食べ/g,            "全量摂取"],
+  [/8割|八割/g,                "8割程度"],
+  [/半分(くらい|ほど)?/g,       "半量"],
+  [/少し(か|しか)?食べ/g,       "少量摂取"],
+  [/食べ(ない|なかっ|られ)/g,   "摂取困難"],
+  [/むせ(た|ていた|る)/g,       "むせ込みあり"],
+  // 水分
+  [/お茶|水分/g,               "水分"],
+  [/よく飲ん/g,                "水分摂取良好"],
+  // 排泄
+  [/おトイレ|お手洗い|便所/g,   "トイレ"],
+  [/うんち|大便/g,              "排便"],
+  [/おしっこ|小便/g,            "排尿"],
+  [/おむつ|パッド/g,            "おむつ"],
+  [/もれ|漏れ|失禁/g,          "失禁"],
+  [/(\d+)回/g,                 "$1回"],
+  // 入浴
+  [/お風呂|おふろ/g,            "入浴"],
+  [/シャワー浴/g,               "シャワー浴"],
+  [/体を拭/g,                   "清拭"],
+  // 活動
+  [/レク\b/g,                   "レクリエーション"],
+  [/お散歩/g,                   "散歩"],
+  [/リハ\b/g,                   "リハビリ"],
+  [/ラジオ体操/g,               "ラジオ体操"],
+  // 様子・表情
+  [/楽しそう/g,                 "楽しそうな様子"],
+  [/笑顔(が|を|で)/g,           "笑顔が"],
+  [/笑っ(ていた|てい|てた)/g,   "笑顔が見られ"],
+  [/元気(が|で|な)/g,           "活気があり"],
+  [/眠そう|うとうと|うつら/g,   "傾眠傾向"],
+  [/ぼーっと/g,                 "傾眠傾向"],
+  [/穏やか/g,                   "穏やか"],
+  [/落ち着い(て|ていた)/g,      "落ち着いた様子"],
+  [/痛がっ|痛みを訴え/g,        "疼痛の訴えあり"],
+  [/嫌がっ|拒否/g,              "拒否あり"],
+  [/怒っ|怒り/g,               "興奮あり"],
+  // バイタル
+  [/体温|熱/g,                  "体温"],
+  [/血圧/g,                     "血圧"],
+  [/SpO2|酸素/g,               "SpO2"],
+  [/脈(拍)?/g,                  "脈拍"],
+  // 介助表現
+  [/手伝っ|手伝い/g,            "介助"],
+  [/一緒に/g,                   "職員付き添いのもと"],
+  [/自分で|ひとりで/g,          "自立にて"],
+  [/少し手伝/g,                 "一部介助"],
+];
+
+/* ---- 話題キーワードマップ（分類用） ---- */
+const TOPIC_KEYS = {
+  meal:      /食事|朝食|昼食|夕食|摂取|完食|おかず|副食|むせ|食欲|食べ/,
+  hydration: /水分|お茶|飲水|飲ん/,
+  excretion: /排泄|排尿|排便|トイレ|失禁|おむつ|パッド|便|尿/,
+  bath:      /入浴|シャワー|清拭|風呂|体を拭/,
+  vital:     /体温|血圧|SpO2|脈|バイタル|熱が|熱を/,
+  activity:  /レク|散歩|体操|リハ|活動|参加|外出/,
+  condition: /表情|笑顔|穏やか|元気|活気|傾眠|眠そう|落ち着|様子|訴え|痛み|不安|怒|拒否|興奮/,
+};
+
+/* ---- 話題の表示順（介護記録の標準的な記載順） ---- */
+const TOPIC_ORDER = ["meal","hydration","excretion","bath","vital","activity","condition"];
+
+/**
+ * 通常記録本文を生成する
+ * alt=true で文末表現を変えて再生成に対応
+ */
+function buildNormalRecord(slots, alt){
+  const raw = slots.raw?.value || "";
+  if (!raw) return "特記事項なし。";
+
+  // Step1: 発話を文に分割・クリーニング
+  const sentences = raw
+    .split(/[。！\n]/)
+    .map(s => s.trim().replace(/^[、，\s]+/, ""))
+    .filter(s => s.length >= 2);
+
+  if (sentences.length === 0) return "特記事項なし。";
+
+  // Step2: 語彙正規化
+  const normalized = sentences.map(applyVocab);
+
+  // Step3: 話題別に分類
+  const byTopic = {};
+  const used = new Set();
+
+  for (const topic of TOPIC_ORDER){
+    byTopic[topic] = normalized.filter((s, i) => {
+      if (used.has(i)) return false;
+      if (TOPIC_KEYS[topic].test(s)){ used.add(i); return true; }
+      return false;
+    });
+  }
+  // 分類できなかった文を末尾に追加
+  const rest = normalized.filter((_, i) => !used.has(i));
+
+  // Step4: 話題ごとに常体変換・整形して結合
+  const parts = [];
+  for (const topic of TOPIC_ORDER){
+    if (byTopic[topic].length > 0){
+      const text = byTopic[topic].map(s => toJotai(s, alt)).join("また、");
+      parts.push(formatTopicLine(topic, text, alt));
+    }
+  }
+  // 残りの文も変換して追加
+  for (const s of rest){
+    const line = toJotai(s, alt);
+    if (line) parts.push(line);
+  }
+
+  return parts.join("") || "特記事項なし。";
+}
+
+/** 語彙辞書を適用する */
+function applyVocab(text){
+  let t = text;
+  // 不要な口語・呼びかけを除去
+  t = t.replace(/^(今日(は|も)|本日(は|も)|えーと|あの[ー]?|ちょっと|そうそう|あと|それで|でも)[、\s]*/g, "");
+  t = t.replace(/[さ様](が|は|の|に|を|で|も)?\s*/g, "が");  // 山田さんが → が
+  t = t.replace(/^(私|職員|スタッフ)(が|は|で|も)\s*/g, "");
+  t = t.replace(/(ね|よ|ね[〜ー]|よ[〜ー])$/g, "");
+  // 語彙変換
+  for (const [pat, rep] of CARE_VOCAB) t = t.replace(pat, rep);
+  return t;
+}
+
+/**
+ * 話題ごとに整形された記録文を生成する
+ * 具体的な数値や内容を抽出して自然な文にする
+ */
+function formatTopicLine(topic, text, alt){
+  // 数値・程度の抽出
+  const amount = text.match(/(\d+割|全量|半量|少量|ほとんど|8割|7割|9割|全部)/)?.[0] || "";
+  const count  = text.match(/(\d+回)/)?.[0] || "";
+
+  const end = alt ? "された。" : "される。";
+  const endSeen = alt ? "が見られた。" : "が見られる。";
+
+  switch(topic){
+    case "meal": {
+      if (/摂取困難|食べ(られ|ない)/.test(text)) return `食事摂取困難な状況が見られる。`;
+      if (/むせ/.test(text)) return `食事中にむせ込みあり。観察継続。`;
+      const amtStr = amount ? amount + "摂取" : "摂取";
+      return `食事を${amtStr}${end}`;
+    }
+    case "hydration":
+      if (/良好|よく/.test(text)) return `水分摂取良好。`;
+      if (/少|拒否/.test(text)) return `水分摂取量少なめ。`;
+      return `水分摂取${end}`;
+    case "excretion": {
+      const assisted = /介助/.test(text);
+      const selfcare = /自立/.test(text);
+      const place    = /トイレ/.test(text);
+      const cntStr   = count ? count : "";
+      if (/失禁/.test(text)) return `失禁あり。${cntStr ? cntStr + "回 " : ""}交換対応。`;
+      // 場所と介助レベルを重複しないよう組み立て
+      const loc = place ? "トイレにて" : "";
+      const ast = assisted ? "介助にて" : selfcare ? "自立にて" : "";
+      const cnt = cntStr ? cntStr + "回" : "";
+      return `${loc}${ast}${cnt}排泄${end}`;
+    }
+    case "bath":
+      if (/拒否/.test(text)) return `入浴拒否あり。清拭対応。`;
+      if (/清拭/.test(text)) return `清拭実施。`;
+      if (/シャワー/.test(text)) return `シャワー浴実施。`;
+      return `入浴実施。`;
+    case "vital": {
+      const nums = text.match(/\d+[\d.\/]*/g) || [];
+      const label = /体温|熱/.test(text) ? "体温" : /血圧/.test(text) ? "血圧" : "バイタル";
+      return nums.length ? `${label} ${nums.join("/")}。` : `バイタル測定実施。`;
+    }
+    case "activity":
+      if (/拒否/.test(text)) return `レクリエーション参加拒否あり。`;
+      if (/積極|楽しそう|笑顔/.test(text)) return `レクリエーションに積極的に参加${end}`;
+      return `${/散歩/.test(text)?"散歩":"レクリエーション"}に参加${end}`;
+    case "condition": {
+      if (/興奮|怒/.test(text)) return `興奮気味の様子が見られる。職員対応。`;
+      if (/傾眠/.test(text)) return `傾眠傾向${endSeen}`;
+      if (/疼痛|痛/.test(text)) return `疼痛の訴えあり。`;
+      if (/笑顔/.test(text)) return `笑顔${endSeen}`;
+      if (/穏やか|落ち着/.test(text)) return `穏やかに過ごす様子${endSeen}`;
+      if (/活気|元気/.test(text)) return `活気のある様子${endSeen}`;
+      // 様子を描写する文がそのまま使える場合
+      return toJotai(text, alt);
+    }
+    default:
+      return toJotai(text, alt);
+  }
+}
+
+/** 敬体→常体変換（より包括的） */
+function toJotai(text, alt){
+  let t = text;
+  // 敬体の活用を常体に
+  t = t
+    .replace(/なさっていました/g,  alt ? "なさっていた" : "なさっている")
+    .replace(/されていました/g,     alt ? "されていた"   : "されている")
+    .replace(/していただきました/g, alt ? "いただいた"   : "いただく")
+    .replace(/おられました/g,       alt ? "おられた"     : "おられる")
+    .replace(/されました/g,         alt ? "された"       : "される")
+    .replace(/しておられました/g,   alt ? "しておられた" : "しておられる")
+    .replace(/していました/g,       alt ? "していた"     : "している")
+    .replace(/できていました/g,     alt ? "できていた"   : "できている")
+    .replace(/ありました/g,         alt ? "あった"       : "あり")
+    .replace(/いらっしゃいました/g, alt ? "いらした"     : "いらっしゃる")
+    .replace(/おっしゃいました/g,   alt ? "おっしゃった" : "おっしゃる")
+    .replace(/でした/g,             alt ? "であった"      : "である")
+    .replace(/しました/g,           alt ? "した"         : "する")
+    .replace(/ました/g,             alt ? "た"           : "る")
+    .replace(/ません(でした)?/g,    "ない")
+    .replace(/ではないです/g,       "ではない")
+    .replace(/です(が|ね|よ|か)?/g, "")
+    .replace(/ます(が|ね|よ|か)?/g, "る")
+    .replace(/らしい(です)?/g,      "様子")
+    .replace(/みたい(です)?/g,      "様子")
+    .replace(/そうです/g,           "様子");
+
+  t = t.trim();
+  if (!t) return "";
+  // 文末補完
+  if (!/[。]$/.test(t)){
+    // 「〜様子」「〜あり」「〜なし」で終わる場合は「。」のみ追加
+    if (/様子$|あり$|なし$|実施$|確認$|対応$/.test(t)) t += "。";
+    else t += "。";
+  }
+  return t;
+}
+
+
+/* =====================================================================
+ *  [app.js]  アプリ本体: 状態管理・画面遷移・各UIの結線
+ * ===================================================================== */
+/* =====================================================================
+ * [services/SuggestionStore.js]
+ * ワンタッチ定型文を localStorage に保存するストア。
+ * キー: "care_ai_suggestions" → { agentId: { slotKey: [{label, quick}] } }
+ * 未保存の場合はエージェント定義のデフォルト値を返す。
+ * ===================================================================== */
+const SuggestionStore = {
+  _KEY: "care_ai_suggestions",
+  _data: {},
+
+  load(){
+    try{ this._data = JSON.parse(localStorage.getItem(this._KEY)||"{}"); }
+    catch(_){ this._data = {}; }
+  },
+
+  /** スロットの定型文を返す（保存済み優先、なければデフォルト） */
+  get(agentId, slotKey){
+    return this._data[agentId]?.[slotKey] ?? null;
+  },
+
+  /** スロットの定型文を保存 */
+  set(agentId, slotKey, items){
+    if(!this._data[agentId]) this._data[agentId] = {};
+    this._data[agentId][slotKey] = items;
+    localStorage.setItem(this._KEY, JSON.stringify(this._data));
+  },
+
+  /** エージェント全スロットをデフォルトにリセット */
+  reset(agentId){
+    delete this._data[agentId];
+    localStorage.setItem(this._KEY, JSON.stringify(this._data));
+  },
+
+  /** スロットの定型文取得（保存→デフォルトの順） */
+  getOrDefault(agentId, slotKey, defaultSuggestions){
+    return this.get(agentId, slotKey) ?? defaultSuggestions ?? [];
+  },
+};
+
+const AGENTS = { normal: normalAgent, accident: accidentAgent };
+
+/* =====================================================================
+ * [services/UserStore.js]
+ * 利用者リストを localStorage に保存する薄いストア。
+ * キー: "care_ai_users" → [{id:string, name:string}]
+ * idは追加時刻ベースの簡易UID（衝突確率が極めて低く、外部依存なし）。
+ * ===================================================================== */
+const UserStore = {
+  _KEY: "care_ai_users",
+  _users: [],
+
+  /** 初期ロード（アプリ起動時に1回呼ぶ） */
+  load(){
+    try{
+      const raw = localStorage.getItem(this._KEY);
+      this._users = raw ? JSON.parse(raw) : this._defaults();
+    }catch(_){
+      this._users = this._defaults();
+    }
+  },
+
+  /** デフォルト利用者（初回起動時のみ使用） */
+  _defaults(){
+    return [
+      { id:"u1", name:"山田 太郎" },
+      { id:"u2", name:"佐藤 花子" },
+      { id:"u3", name:"鈴木 一郎" },
+      { id:"u4", name:"田中 みつ" },
+    ];
+  },
+
+  _save(){ localStorage.setItem(this._KEY, JSON.stringify(this._users)); },
+
+  all(){ return [...this._users]; },
+  find(id){ return this._users.find(u => u.id === id); },
+
+  add(name){
+    const id = "u" + Date.now().toString(36);
+    this._users.push({ id, name });
+    this._save();
+    return id;
+  },
+  update(id, name){
+    const u = this.find(id);
+    if (u){ u.name = name; this._save(); }
+  },
+  remove(id){
+    this._users = this._users.filter(u => u.id !== id);
+    this._save();
+  },
+  /** 並び替え: idの配列順に並べ直す */
+  reorder(ids){
+    const map = Object.fromEntries(this._users.map(u => [u.id, u]));
+    this._users = ids.map(id => map[id]).filter(Boolean);
+    this._save();
+  },
+};
+
+const App = {
+  ai: new MockAIService(),      // ← 本番は new OpenAIService(key) 等に差し替えるだけ
+  agent: null,
+  user: "",
+  history: [],
+  slots: {},
+  busy: false,
+
+  // DOM参照
+  el:{},
+
+  init(){
+    this.el = {
+      home:    document.getElementById("view-home"),
+      chat:    document.getElementById("view-chat"),
+      agentList:document.getElementById("agent-list"),
+      startBtn:document.getElementById("start-btn"),
+      backBtn: document.getElementById("back-btn"),
+      title:   document.getElementById("chat-title"),
+      chatUser:document.getElementById("chat-user"),
+      badge:   document.getElementById("mode-badge"),
+      infobar: document.getElementById("infobar"),
+      infobarBar: document.getElementById("infobar-bar"),
+      barDots: document.getElementById("bar-dots"),
+      pills:   document.getElementById("pills"),
+      prog:    document.getElementById("info-prog"),
+      messages:document.getElementById("messages"),
+      suggestbar: null,   // チャット内インライン表示に変更（DOM要素なし）
+      input:   document.getElementById("input"),
+      sendBtn: document.getElementById("send-btn"),
+      micBtn:  document.getElementById("mic-btn"),
+      toast:   document.getElementById("toast"),
+      // 利用者管理
+      viewMgmt:   document.getElementById("view-mgmt"),
+      mgmtList:   document.getElementById("mgmt-list"),
+      userSelect: document.getElementById("user-select"),
+      editUsersBtn: document.getElementById("edit-users-btn"),
+      mgmtDoneBtn:  document.getElementById("mgmt-done-btn"),
+      // 定型文編集ビュー
+      viewSuggEdit:  document.getElementById("view-sugg-edit"),
+      suggEditList:  document.getElementById("sugg-edit-list"),
+      suggAgentTabs: document.getElementById("sugg-agent-tabs"),
+      openSuggBtn:   document.getElementById("open-sugg-btn"),
+      suggDoneBtn:   document.getElementById("sugg-done-btn"),
+      // PINモーダル
+      pinOverlay: document.getElementById("pin-overlay"),
+      pinDots:    [0,1,2,3].map(i => document.getElementById(`pin-d${i}`)),
+      pinCancel:  document.getElementById("pin-cancel"),
+      pinDel:     document.getElementById("pin-del"),
+    };
+    this.selectedAgentId = "accident";
+    this._suggAgentId = "accident";
+    this._pin = "";              // 現在入力中のPIN
+    this._pinCallback = null;    // PIN確認後に実行する処理
+    UserStore.load();
+    SuggestionStore.load();
+    this.renderUserSelect();
+    this.renderAgentList();
+    this.bind();
+  },
+
+  /* =====================================================================
+   * [components/UserStore]
+   * 利用者リストを localStorage に永続化する薄いストア。
+   * キー: "care_ai_users" → JSON配列 [{id, name}]
+   * ===================================================================== */
+
+  /* ----- ホーム: 利用者セレクトボックス描画 ----- */
+  renderUserSelect(){
+    const sel = this.el.userSelect;
+    const users = UserStore.all();
+    sel.innerHTML = users.length
+      ? users.map(u => `<option value="${this.escape(u.name)}">${this.escape(u.name)} 様</option>`).join("")
+      : `<option value="">（利用者が登録されていません）</option>`;
+    // 現在選択中ユーザーを維持
+    if (this.user && users.find(u => u.name === this.user)){
+      sel.value = this.user;
+    } else {
+      this.user = users[0]?.name ?? "";
+    }
+  },
+
+  /* ----- ホーム: 入力種別リスト描画 ----- */
+  renderAgentList(){
+    const items = [
+      { id:"accident", title:"事故報告書AI", sub:"会話だけで報告書を作成",     soon:false },
+      { id:"normal",   title:"通常記録AI",   sub:"開発中",                     soon:true  },
+      { id:"imgai",    title:"事故画像判断AI", sub:"開発中",                   soon:true  },
+    ];
+    this.el.agentList.innerHTML = items.map(it => `
+      <div class="row radio-row" role="radio" tabindex="0"
+           aria-checked="${it.id===this.selectedAgentId}"
+           data-id="${it.id}" ${it.soon?'aria-disabled="true"':''}>
+        <div class="radio" aria-hidden="true"></div>
+        <div class="row-main">
+          <div class="row-title">${it.title}</div>
+          <div class="row-sub">${it.sub}</div>
+        </div>
+        ${it.soon?'<span class="badge-soon">開発中</span>':''}
+      </div>`).join("");
+
+    this.el.agentList.querySelectorAll(".radio-row").forEach(row=>{
+      const select = ()=>{
+        if (row.getAttribute("aria-disabled")) { this.toast("この機能は現在開発中です"); return; }
+        this.selectedAgentId = row.dataset.id;
+        this.el.agentList.querySelectorAll(".radio-row").forEach(r=>
+          r.setAttribute("aria-checked", r.dataset.id===this.selectedAgentId));
+      };
+      row.addEventListener("click", select);
+      row.addEventListener("keydown", e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); select(); }});
+    });
+  },
+
+  bind(){
+    this.el.startBtn.addEventListener("click", ()=>this.startChat());
+    this.el.backBtn.addEventListener("click", ()=>this.goHome());
+    this.el.userSelect.addEventListener("change", e=>{ this.user = e.target.value; });
+
+    // 取得済み情報バーの開閉トグル
+    this.el.infobarBar.addEventListener("click", ()=> this.toggleInfobar());
+    this.el.infobarBar.addEventListener("keydown", e=>{
+      if (e.key==="Enter"||e.key===" "){ e.preventDefault(); this.toggleInfobar(); }
+    });
+    this.el.mgmtDoneBtn.addEventListener("click", ()=>this.closeMgmt());
+
+    // 定型文編集ビューの開閉
+    this.el.openSuggBtn.addEventListener("click", ()=>{
+      // 定型文編集はPIN認証を経てから開く
+      this._requestPin(()=>this.openSuggEdit());
+    });
+    this.el.suggDoneBtn.addEventListener("click", ()=>this.closeSuggEdit());
+
+    // PINモーダル: 数字キー
+    this.el.pinOverlay.querySelectorAll(".pin-key[data-n]").forEach(btn=>{
+      btn.addEventListener("click", ()=>this._pinInput(btn.dataset.n));
+    });
+    this.el.pinDel.addEventListener("click",    ()=>this._pinDelete());
+    this.el.pinCancel.addEventListener("click", ()=>this._pinClose());
+    // オーバーレイ背景タップでキャンセル
+    this.el.pinOverlay.addEventListener("click", e=>{
+      if (e.target === this.el.pinOverlay) this._pinClose();
+    });
+
+    // 入力欄: 自動リサイズ & 送信可否
+    const ta = this.el.input;
+    ta.addEventListener("input", ()=>{
+      ta.style.height="auto"; ta.style.height=Math.min(ta.scrollHeight,140)+"px";
+      this.el.sendBtn.disabled = ta.value.trim()==="" || this.busy;
+    });
+    ta.addEventListener("keydown", e=>{
+      if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); this.send(); }
+    });
+    this.el.sendBtn.addEventListener("click", ()=>this.send());
+    this.el.micBtn.addEventListener("click", ()=>this.toggleVoice());
+  },
+
+  /* =====================================================================
+   * 取得済み情報バー: 開閉 / 自動展開
+   * ===================================================================== */
+  toggleInfobar(){
+    this.el.infobar.classList.toggle("open");
+    const isOpen = this.el.infobar.classList.contains("open");
+    this.el.infobarBar.setAttribute("aria-expanded", isOpen);
+    // 自動閉じタイマーをリセット（手動で開いたときは維持）
+    clearTimeout(this._infoAutoClose);
+  },
+
+  openInfobar(){ this.el.infobar.classList.add("open"); this.el.infobarBar.setAttribute("aria-expanded","true"); },
+  closeInfobar(){ this.el.infobar.classList.remove("open"); this.el.infobarBar.setAttribute("aria-expanded","false"); },
+
+  /**
+   * 新情報取得時: パネルを展開 → 1.8秒後に自動折りたたみ
+   * 既に手動で開いている場合はタイマーを立てない
+   */
+  flashInfobar(){
+    const wasOpen = this.el.infobar.classList.contains("open");
+    this.openInfobar();
+    if (!wasOpen){
+      clearTimeout(this._infoAutoClose);
+      this._infoAutoClose = setTimeout(()=>{ this.closeInfobar(); }, 1800);
+    }
+  },
+
+  /* =====================================================================
+   * PINロック
+   * ===================================================================== */
+  _PIN_CORRECT: "3051",
+
+  /** PINモーダルを表示し、正解したら callback を実行 */
+  _requestPin(callback){
+    this._pin = "";
+    this._pinCallback = callback;
+    this._pinRefresh();
+    this.el.pinOverlay.classList.add("show");
+  },
+
+  /** PIN入力: 数字を1文字追加 */
+  _pinInput(digit){
+    if (this._pin.length >= 4) return;
+    this._pin += digit;
+    this._pinRefresh();
+    if (this._pin.length === 4){
+      if (this._pin === this._PIN_CORRECT){
+        // 正解: コールバックを退避してからモーダルを閉じる
+        const cb = this._pinCallback;
+        setTimeout(()=>{
+          this._pinClose();
+          cb?.();
+        }, 150);
+      } else {
+        // 不正解: エラーアニメーション → リセット
+        this.el.pinDots.forEach(d=>{ d.classList.remove("filled"); d.classList.add("error"); });
+        setTimeout(()=>{
+          this._pin = "";
+          this.el.pinDots.forEach(d=>{ d.classList.remove("error"); });
+          this._pinRefresh();
+        }, 600);
+      }
+    }
+  },
+
+  /** PIN入力: 1文字削除 */
+  _pinDelete(){
+    this._pin = this._pin.slice(0, -1);
+    this._pinRefresh();
+  },
+
+  /** PINモーダルを閉じる */
+  _pinClose(){
+    this.el.pinOverlay.classList.remove("show");
+    this._pin = "";
+    this._pinCallback = null;
+  },
+
+  /** ドット表示を現在の入力長に合わせて更新 */
+  _pinRefresh(){
+    this.el.pinDots.forEach((d, i)=>{
+      d.classList.toggle("filled", i < this._pin.length);
+      d.classList.remove("error");
+    });
+  },
+
+  /* =====================================================================
+   * 定型文編集ビュー
+   * ===================================================================== */
+  openSuggEdit(){
+    this._suggAgentId = "accident";
+    this.el.home.classList.remove("active");
+    this.el.viewSuggEdit.classList.add("active");
+    this.renderSuggEditPage();
+  },
+  closeSuggEdit(){
+    this.el.viewSuggEdit.classList.remove("active");
+    this.el.home.classList.add("active");
+  },
+
+  /** エージェントタブを描画（将来の拡張用：現在はaccidentのみ） */
+  _renderSuggTabs(){
+    // 現在は事故報告書AIのみ表示（開発中エージェントのタブは非表示）
+    this.el.suggAgentTabs.innerHTML = "";  // タブ非表示
+  },
+
+  /**
+   * 定型文編集リストを描画
+   * エージェントの全スロット（hidden含む）を対象に、
+   * スロットごとのグループとして並べる。
+   */
+  renderSuggEditPage(){
+    this._renderSuggTabs();
+    const agentId = this._suggAgentId;
+    const agent   = AGENTS[agentId];
+    const list    = this.el.suggEditList;
+
+    // スロットのうちsuggestions定義があるものを対象
+    const slotDefs = agent.slots.filter(s => s.suggestions !== undefined);
+
+    list.innerHTML = "";
+
+    slotDefs.forEach(slotDef => {
+      // グループラベル
+      const header = document.createElement("div");
+      header.style.cssText = "padding:10px 18px 4px;font-size:12px;font-weight:700;color:var(--ink-2);letter-spacing:.04em;background:var(--bg);";
+      header.textContent = slotDef.label || slotDef.key;
+      list.appendChild(header);
+
+      // カードリスト
+      const card = document.createElement("div");
+      card.className = "card-list";
+      card.style.borderRadius = "var(--r-lg)";
+      list.appendChild(card);
+
+      this._renderSuggSlot(card, agentId, slotDef);
+    });
+
+    // リセットボタン
+    const resetBtn = document.createElement("button");
+    resetBtn.className = "sugg-reset";
+    resetBtn.textContent = "すべてデフォルトに戻す";
+    resetBtn.addEventListener("click", ()=>{
+      if (!confirm("この操作は元に戻せません。\nすべての定型文をデフォルトに戻しますか？")) return;
+      SuggestionStore.reset(agentId);
+      this.renderSuggEditPage();
+      this.toast("デフォルトに戻しました");
+    });
+    list.appendChild(resetBtn);
+  },
+
+  /**
+   * 1スロット分の定型文リストを描画
+   * 各行: [定番トグル][ラベル（タップで編集）][削除]
+   */
+  _renderSuggSlot(card, agentId, slotDef){
+    // 現在の定型文（保存済み or デフォルト）
+    let items = JSON.parse(JSON.stringify(
+      SuggestionStore.getOrDefault(agentId, slotDef.key, slotDef.suggestions)
+    ));
+
+    const save = () => SuggestionStore.set(agentId, slotDef.key, items);
+    const rebuild = () => {
+      card.innerHTML = "";
+      this._renderSuggRows(card, items, save, rebuild);
+      addAddRow();
+    };
+    const addAddRow = () => {
+      const addRow = document.createElement("button");
+      addRow.className = "add-row";
+      addRow.innerHTML = `<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M12 8v8M8 12h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>追加`;
+      addRow.addEventListener("click", ()=>{
+        items.push({ label:"", quick:false });
+        save();
+        rebuild();
+        // 追加した行の入力欄にフォーカス
+        setTimeout(()=>{
+          const inputs = card.querySelectorAll(".sugg-input");
+          inputs[inputs.length-1]?.focus();
+        }, 50);
+      });
+      card.appendChild(addRow);
+    };
+
+    this._renderSuggRows(card, items, save, rebuild);
+    addAddRow();
+  },
+
+  _renderSuggRows(card, items, save, rebuild){
+    items.forEach((item, idx)=>{
+      const row = document.createElement("div");
+      row.className = "sugg-row";
+
+      // 定番トグル
+      const toggle = document.createElement("button");
+      toggle.className = "quick-toggle";
+      toggle.innerHTML = `<span class="quick-badge ${item.quick?'on':''}">定番</span>`;
+      toggle.title = "タップで「定番」（色付き）をオン/オフ";
+      toggle.addEventListener("click", ()=>{
+        item.quick = !item.quick;
+        save();
+        toggle.querySelector(".quick-badge").className = `quick-badge ${item.quick?"on":""}`;
+      });
+
+      // ラベル（タップで編集）
+      const labelEl = document.createElement("span");
+      labelEl.className = "sugg-label";
+      labelEl.textContent = item.label || "（未入力）";
+      labelEl.style.color = item.label ? "" : "var(--ink-3)";
+      labelEl.addEventListener("click", ()=>{
+        const input = document.createElement("input");
+        input.className = "sugg-input";
+        input.value = item.label;
+        input.placeholder = "定型文を入力";
+        input.maxLength = 30;
+        labelEl.replaceWith(input);
+        input.focus(); input.select();
+        const commit = ()=>{
+          item.label = input.value.trim();
+          save();
+          rebuild();
+        };
+        input.addEventListener("blur", commit);
+        input.addEventListener("keydown", e=>{
+          if(e.key==="Enter"){ e.preventDefault(); commit(); }
+          if(e.key==="Escape"){ rebuild(); }
+        });
+      });
+
+      // 削除ボタン
+      const del = document.createElement("button");
+      del.className = "sugg-del";
+      del.textContent = "✕";
+      del.title = "削除";
+      del.addEventListener("click", ()=>{
+        items.splice(idx, 1);
+        save();
+        rebuild();
+        this.toast("削除しました");
+      });
+
+      row.appendChild(toggle);
+      row.appendChild(labelEl);
+      row.appendChild(del);
+      card.appendChild(row);
+    });
+  },
+
+  /* ----- 利用者管理ビュー 開閉 ----- */
+  openMgmt(){
+    this.el.home.classList.remove("active");
+    this.el.viewMgmt.classList.add("active");
+    this.renderMgmtList();
+  },
+  closeMgmt(){
+    this.el.viewMgmt.classList.remove("active");
+    this.el.home.classList.add("active");
+    this.renderUserSelect();   // セレクトボックスを最新化
+  },
+
+  /* =====================================================================
+   * 利用者管理リスト描画
+   * ・名前タップ → インライン編集 → フォーカスアウトで確定
+   * ・— ボタンタップ → 即削除（確認なし。誤削除が怖い場合はトーストで元に戻す余地あり）
+   * ・⋮⋮ ハンドルのドラッグ & ドロップ（touch/pointer 両対応）で並び替え
+   * ===================================================================== */
+  renderMgmtList(){
+    const users = UserStore.all();
+    const list = this.el.mgmtList;
+
+    list.innerHTML = users.length === 0
+      ? `<div class="empty-hint">利用者が登録されていません</div>`
+      : users.map((u, i) => `
+        <div class="mgmt-row" data-id="${u.id}" draggable="false">
+          <button class="del-btn" aria-label="削除" data-id="${u.id}">—</button>
+          <div class="drag-handle" aria-label="並び替え" title="ドラッグで並び替え">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M9 5h1M9 12h1M9 19h1M14 5h1M14 12h1M14 19h1" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+          </div>
+          <span class="mgmt-name" data-id="${u.id}">${this.escape(u.name)}</span>
+        </div>`).join("") +
+      `<button class="add-row" id="add-user-row">
+        <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="M12 8v8M8 12h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        利用者を追加
+      </button>`;
+
+    // 削除ボタン
+    list.querySelectorAll(".del-btn").forEach(btn => {
+      btn.addEventListener("click", ()=>{
+        const id = btn.dataset.id;
+        UserStore.remove(id);
+        this.renderMgmtList();
+        this.toast("削除しました");
+      });
+    });
+
+    // 名前タップ → インライン編集
+    list.querySelectorAll(".mgmt-name").forEach(span => {
+      span.addEventListener("click", ()=>{
+        const id = span.dataset.id;
+        const user = UserStore.find(id);
+        if (!user) return;
+        const input = document.createElement("input");
+        input.className = "mgmt-input";
+        input.value = user.name;
+        input.maxLength = 30;
+        span.replaceWith(input);
+        input.focus(); input.select();
+        const commit = ()=>{
+          const name = input.value.trim();
+          if (name){ UserStore.update(id, name); }
+          this.renderMgmtList();
+        };
+        input.addEventListener("blur", commit);
+        input.addEventListener("keydown", e=>{
+          if (e.key==="Enter"){ e.preventDefault(); commit(); }
+          if (e.key==="Escape"){ this.renderMgmtList(); }
+        });
+      });
+    });
+
+    // 追加ボタン → 末尾に空インプットを挿入してフォーカス
+    const addRow = list.querySelector("#add-user-row");
+    if (addRow) addRow.addEventListener("click", ()=>this._addUserInline());
+
+    // ドラッグ & ドロップ並び替え（touch 対応）
+    this._initDragSort(list);
+  },
+
+  /** 新規追加: 追加ボタンを一時的にインプット行に差し替える */
+  _addUserInline(){
+    const list = this.el.mgmtList;
+    const addRow = list.querySelector("#add-user-row");
+    if (!addRow) return;
+    const input = document.createElement("input");
+    input.className = "mgmt-input";
+    input.placeholder = "名前を入力";
+    input.maxLength = 30;
+    input.style.cssText = "display:block;width:100%;padding:14px 18px;border:none;background:var(--surface);border-top:1px solid var(--line-2);font-family:inherit;font-size:17px;";
+    addRow.replaceWith(input);
+    input.focus();
+    const commit = ()=>{
+      const name = input.value.trim();
+      if (name) UserStore.add(name);
+      this.renderMgmtList();
+    };
+    input.addEventListener("blur", commit);
+    input.addEventListener("keydown", e=>{
+      if (e.key==="Enter"){ e.preventDefault(); commit(); }
+      if (e.key==="Escape"){ this.renderMgmtList(); }
+    });
+  },
+
+  /** ドラッグ & ドロップ並び替え（pointer events / touch 両対応） */
+  _initDragSort(list){
+    let dragging = null, startIndex = -1;
+
+    const rows = ()=> [...list.querySelectorAll(".mgmt-row")];
+    const indexOf = el => rows().indexOf(el);
+
+    const onPointerDown = (e, handle)=>{
+      const row = handle.closest(".mgmt-row");
+      if (!row) return;
+      e.preventDefault();
+      dragging = row;
+      startIndex = indexOf(row);
+      row.classList.add("dragging");
+      row.style.zIndex = 10;
+    };
+    const onPointerMove = e=>{
+      if (!dragging) return;
+      const y = (e.touches ? e.touches[0] : e).clientY;
+      const target = document.elementFromPoint(10, y)?.closest(".mgmt-row");
+      if (target && target !== dragging){
+        const ti = indexOf(target);
+        const di = indexOf(dragging);
+        if (ti > di) list.insertBefore(dragging, target.nextSibling);
+        else list.insertBefore(dragging, target);
+      }
+    };
+    const onPointerUp = ()=>{
+      if (!dragging) return;
+      dragging.classList.remove("dragging");
+      dragging.style.zIndex = "";
+      // 新しい順序をストアに反映
+      const newOrder = rows().map(r => r.dataset.id).filter(Boolean);
+      UserStore.reorder(newOrder);
+      dragging = null;
+    };
+
+    list.querySelectorAll(".drag-handle").forEach(h=>{
+      h.addEventListener("pointerdown", e=>onPointerDown(e, h));
+      h.addEventListener("touchstart",  e=>onPointerDown(e, h), { passive:false });
+    });
+    list.addEventListener("pointermove", onPointerMove);
+    list.addEventListener("touchmove",   e=>onPointerMove(e.touches[0]), { passive:true });
+    list.addEventListener("pointerup",   onPointerUp);
+    list.addEventListener("touchend",    onPointerUp);
+  },
+
+  /* ----- 画面遷移 ----- */
+  startChat(){
+    this.agent = AGENTS[this.selectedAgentId];
+    this.history = [];
+    this.slots = {};
+    this._pendingReport = null;
+    this.el.input.disabled = false;
+    this.busy = false;
+
+    // モード適用（アクセント色・バッジ・タイトル）
+    document.getElementById("app").setAttribute("data-mode", this.agent.mode);
+    this.el.title.textContent = this.agent.name;
+    this.el.chatUser.textContent = "京町亭 様";
+    this.el.badge.textContent = this.agent.badge;
+    this.el.messages.innerHTML = "";
+    this.renderPills();
+    this.openInfobar();            // 初回は展開状態で表示
+    this.hideSuggests();
+
+    this.el.home.classList.remove("active");
+    this.el.chat.classList.add("active");
+
+    // 挨拶（AIの最初の発話）
+    this.addMessage("ai", this.agent.greeting);
+    this.history.push({ role:"ai", text:this.agent.greeting });
+    setTimeout(()=>this.el.input.focus(), 300);
+  },
+  goHome(){
+    if (this.recognizing) this.stopVoice();
+    this.el.chat.classList.remove("active");
+    this.el.home.classList.add("active");
+  },
+
+  /* ----- 取得済み情報ピル ----- */
+  renderPills(){
+    const visible = this.agent.slots.filter(s => !s.hidden);
+    const nextSlot = visible.find(s => s.required && !this.slots[s.key]?.filled);
+
+    // ---- 展開パネル（2カラムグリッド） ----
+    this.el.pills.innerHTML = visible.map(s => {
+      const filled = this.slots[s.key]?.filled;
+      const value  = filled ? this.slots[s.key].value : "未取得";
+      const isNext = !filled && s === nextSlot;
+      const cls    = filled ? "filled" : isNext ? "next-ask" : "";
+      return `<div class="pill ${cls}" data-key="${s.key}">
+        <span class="dot">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M4 12l5 5L20 6" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <span class="pill-text">
+          <span class="pill-label">${this.escape(s.label)}</span>
+          <span class="pill-value">${this.escape(value)}</span>
+        </span>
+      </div>`;
+    }).join("");
+
+    // ---- バードット（常時表示の1行サマリー） ----
+    this.el.barDots.innerHTML = visible.map(s => {
+      const filled = this.slots[s.key]?.filled;
+      const isNext = !filled && s === nextSlot;
+      const cls    = filled ? "filled" : isNext ? "next-ask" : "";
+      return `<span class="bar-dot ${cls}" title="${this.escape(s.label)}${filled ? "：" + this.slots[s.key].value : ""}"></span>`;
+    }).join("");
+
+    // ---- 進捗カウント ----
+    const required = visible.filter(s => s.required);
+    const got = required.filter(s => this.slots[s.key]?.filled).length;
+    this.el.prog.textContent = `${got} / ${required.length}`;
+  },
+
+  /* ----- メッセージ描画 ----- */
+  addMessage(role, text){
+    const div = document.createElement("div");
+    div.className = `msg ${role}`;
+    const avatar = role==="ai"
+      ? `<div class="av"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l1.6 3.9L17.5 8l-3.9 1.6L12 13.5l-1.6-3.9L6.5 8l3.9-1.1L12 3Z" fill="#fff"/><circle cx="7" cy="16" r="1.4" fill="#fff"/><circle cx="17" cy="17" r="1.1" fill="#fff"/></svg></div>`
+      : `<div class="av"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.4" stroke="currentColor" stroke-width="1.8"/><path d="M5 19.5a7 7 0 0 1 14 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></div>`;
+    div.innerHTML = `${avatar}<div class="bubble">${this.escape(text)}</div>`;
+    this.el.messages.appendChild(div);
+    this.scrollDown();
+    return div;
+  },
+
+  showTyping(){
+    const div = document.createElement("div");
+    div.className = "msg ai typing";
+    div.innerHTML = `<div class="av"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3l1.6 3.9L17.5 8l-3.9 1.6L12 13.5l-1.6-3.9L6.5 8l3.9-1.1L12 3Z" fill="#fff"/></svg></div>
+      <div class="bubble">内容を整理しています <span class="dots"><i></i><i></i><i></i></span></div>`;
+    this.el.messages.appendChild(div);
+    this.scrollDown();
+    return div;
+  },
+
+  /* ----- 送信 → AI応答 ----- */
+  async send(){
+    const text = this.el.input.value.trim();
+    if (!text || this.busy) return;
+    if (this.recognizing) this.stopVoice();
+
+    this.busy = true;
+    this.el.input.value = ""; this.el.input.style.height="auto";
+    this.el.sendBtn.disabled = true;
+
+    this.addMessage("user", text);
+    this.history.push({ role:"user", text });
+
+    const typing = this.showTyping();      // 「内容を整理しています…」演出
+    const started = Date.now();
+
+    // AIエンジン呼び出し（Mock or 将来のAPI）
+    const result = await this.ai.respond({
+      agent: this.agent, history: this.history, message: text, slots: this.slots,
+    });
+    this.slots = result.slots;
+
+    // 通常記録は「揃うまで待つ」ではなく進行判定を上書き
+    let complete = result.complete;
+    let report = result.report;
+    let reply = result.reply;
+    if (this.agent.shouldComplete && this.agent.shouldComplete(this.slots, text)){
+      complete = true;
+      report = this.agent.generateReport(this.slots);
+      reply = this.agent.completionMessage;
+    }
+
+    // 自然な待機（最低約1秒）を担保してからAIの返答を表示
+    const wait = Math.max(0, 1000 - (Date.now()-started));
+    setTimeout(()=>{
+      typing.remove();
+      this.renderPills();
+
+      this.addMessage("ai", reply);
+      this.history.push({ role:"ai", text:reply });
+      if (complete && report){
+        // 確認カードを挟む（報告書はユーザーが「作成」を押してから生成）
+        this._pendingReport = report;
+        this.renderConfirmation(result.slots);
+        this.closeInfobar();
+        this.hideSuggests();
+        // 確認中は入力欄を無効化
+        this.el.input.disabled = true;
+        this.el.sendBtn.disabled = true;
+      } else {
+        this.renderSuggests(result.slots);
+      }
+      this.busy = false;
+      if (!complete) this.el.sendBtn.disabled = this.el.input.value.trim()==="";
+    }, wait);
+  },
+
+  /**
+   * 取得情報の確認カードをチャットに表示する。
+   * 「この内容で作成」→ 報告書生成
+   * 「修正する」→ 確認カードを削除して会話を続ける
+   */
+  /**
+   * 取得情報の確認カード
+   * ・表示モード: 値を一覧表示、「修正する」で編集モードへ
+   * ・編集モード: 各フィールドをインプットで編集可能、「確認する」で保存
+   */
+  renderConfirmation(slots){
+    const visible = this.agent.slots.filter(s => !s.hidden);
+    const card = document.createElement("div");
+    card.id = "confirm-card";
+    card.style.cssText = "animation:rise .3s ease;";
+    this.el.messages.appendChild(card);
+
+    const renderView = () => {
+      const rows = visible.map(s => {
+        const v = slots[s.key]?.value ?? null;
+        return `<div style="display:flex;align-items:baseline;gap:8px;padding:9px 0;border-bottom:1px solid var(--line-2);">
+          <span style="font-size:12px;font-weight:700;color:var(--ink-2);min-width:78px;flex:none;">${this.escape(s.label)}</span>
+          <span style="font-size:15px;font-weight:${v?'600':'400'};color:${v?'var(--ink)':'var(--ink-3)'};flex:1;">${v ? this.escape(v) : '未取得'}</span>
+        </div>`;
+      }).join("");
+
+      card.innerHTML = `
+        <div style="background:var(--surface);border-radius:var(--r-md);box-shadow:var(--shadow-soft);padding:16px 16px 14px;margin:4px 0 12px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+              <path d="M9 12l2 2 4-4" stroke="var(--accent-ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="12" cy="12" r="9" stroke="var(--accent-ink)" stroke-width="1.6"/>
+            </svg>
+            <span style="font-size:14px;font-weight:700;color:var(--accent-ink);">取得情報の確認</span>
+          </div>
+          <div style="margin-bottom:14px;">${rows}</div>
+          <div style="display:flex;gap:8px;">
+            <button id="c-edit"
+              style="flex:1;height:46px;border-radius:var(--r-md);border:1.5px solid var(--line);background:var(--surface-2);color:var(--ink);font-size:15px;font-weight:600;font-family:inherit;cursor:pointer;">
+              ✏️ 修正する
+            </button>
+            <button id="c-ok"
+              style="flex:2;height:46px;border-radius:var(--r-md);border:none;background:var(--accent);color:#fff;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;">
+              この内容で作成
+            </button>
+          </div>
+        </div>`;
+
+      card.querySelector("#c-ok").addEventListener("click", ()=>{
+        card.remove();
+        this.renderReport(this._pendingReport);
+        this._pendingReport = null;
+      });
+
+      card.querySelector("#c-edit").addEventListener("click", ()=> renderEdit());
+    };
+
+    const renderEdit = () => {
+      const inputRows = visible.map(s => {
+        const v = slots[s.key]?.value ?? "";
+        return `<div style="padding:8px 0;border-bottom:1px solid var(--line-2);">
+          <div style="font-size:11px;font-weight:700;color:var(--ink-2);margin-bottom:4px;">${this.escape(s.label)}</div>
+          <input class="c-inp" data-key="${s.escape ? '' : s.key}"
+            value="${this.escape(v)}" placeholder="未取得（空欄で未取得扱い）"
+            style="width:100%;border:1.5px solid var(--accent);border-radius:8px;padding:8px 10px;
+                   font-family:inherit;font-size:15px;color:var(--ink);background:var(--surface-2);
+                   box-sizing:border-box;outline:none;"/>
+        </div>`;
+      }).join("");
+
+      // data-key を正しく埋め込むためinnerHTMLの後にdatasetで設定
+      card.innerHTML = `
+        <div style="background:var(--surface);border-radius:var(--r-md);box-shadow:var(--shadow-soft);padding:16px 16px 14px;margin:4px 0 12px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="var(--accent-ink)" stroke-width="1.8" stroke-linecap="round"/>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5Z" stroke="var(--accent-ink)" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+            <span style="font-size:14px;font-weight:700;color:var(--accent-ink);">内容を修正</span>
+          </div>
+          <div style="margin-bottom:14px;">${inputRows}</div>
+          <div style="display:flex;gap:8px;">
+            <button id="c-cancel"
+              style="flex:1;height:46px;border-radius:var(--r-md);border:1.5px solid var(--line);background:var(--surface-2);color:var(--ink);font-size:15px;font-weight:600;font-family:inherit;cursor:pointer;">
+              キャンセル
+            </button>
+            <button id="c-save"
+              style="flex:2;height:46px;border-radius:var(--r-md);border:none;background:var(--accent);color:#fff;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;">
+              ✅ 確認する
+            </button>
+          </div>
+        </div>`;
+
+      // input の data-key を JS で設定（XSS回避）
+      const inputs = card.querySelectorAll(".c-inp");
+      visible.forEach((s, i) => { inputs[i].dataset.key = s.key; });
+
+      card.querySelector("#c-cancel").addEventListener("click", ()=> renderView());
+      card.querySelector("#c-save").addEventListener("click", ()=>{
+        // 各入力値をslotsに反映
+        inputs.forEach(inp => {
+          const key = inp.dataset.key;
+          const val = inp.value.trim();
+          this.slots[key] = val ? { filled:true, value:val } : { filled:false, value:null };
+        });
+        // スロットのローカル変数も更新して再描画
+        slots = { ...this.slots };
+        this.renderPills();
+        renderView();
+        this.scrollDown();
+      });
+
+      // 最初のフィールドにフォーカス
+      setTimeout(()=> inputs[0]?.focus(), 100);
+      this.scrollDown();
+    };
+
+    renderView();
+    this.scrollDown();
+  },
+
+  /* =====================================================================
+   * [components/SuggestionsBar]
+   * 現在未取得のスロットに defined された suggestions を
+   * 入力欄の直上にグループ表示する。
+   *
+   * 表示ルール:
+   *  - 次に聞かれる「未取得の必須スロット」を最大2グループ分表示
+   *  - suggestions が定義されていないスロットはグループ自体を出さない
+   *  - quick:true のチップは色を付けて「即送信」であることを示す
+   *  - 報告書完成時・startChat直後は非表示
+   * ===================================================================== */
+  /* =====================================================================
+   * [components/InlineSuggests]
+   * 選択肢をチャットの流れの中（messagesエリア内）に表示する。
+   * AIの返答直後に自然に続く形で出現し、タップで即送信。
+   * ===================================================================== */
+  renderSuggests(slots){
+    this.hideSuggests();
+
+    const agentId = this.agent.id;
+
+    // 未取得かつ定型文を持つスロットを最大2つ（SuggestionStoreから取得）
+    const targets = this.agent.slots
+      .filter(s => !slots[s.key]?.filled)
+      .map(s => {
+        const suggs = SuggestionStore.getOrDefault(agentId, s.key, s.suggestions);
+        return suggs?.length ? { slot:s, suggs } : null;
+      })
+      .filter(Boolean)
+      .slice(0, 2);
+
+    if (targets.length === 0) return;
+
+    const wrap = document.createElement("div");
+    wrap.className = "inline-suggests";
+    wrap.id = "inline-suggests";
+
+    targets.forEach(({ slot, suggs }) => {
+      // ラベルが空の定型文は表示しない
+      const validSuggs = suggs.filter(s => s.label?.trim());
+      if (!validSuggs.length) return;
+      const group = document.createElement("div");
+      group.className = "inline-suggests-group";
+      group.innerHTML = `<span class="inline-suggests-label">${this.escape(slot.label)}</span>
+        <div class="inline-suggests-chips">${
+          validSuggs.map(sug => {
+            const cls = sug.quick ? "sug-chip quick" : "sug-chip";
+            return `<button class="${cls}" data-value="${this.escape(sug.label)}">${this.escape(sug.label)}</button>`;
+          }).join("")
+        }</div>`;
+      wrap.appendChild(group);
+    });
+
+    // タップ → 即送信
+    wrap.querySelectorAll(".sug-chip").forEach(btn => {
+      btn.addEventListener("click", ()=>{
+        const val = btn.dataset.value;
+        this.el.input.value = val;
+        this.el.input.dispatchEvent(new Event("input"));
+        this.hideSuggests();
+        this.send();
+      });
+    });
+
+    this.el.messages.appendChild(wrap);
+    this.scrollDown();
+  },
+
+  hideSuggests(){
+    document.getElementById("inline-suggests")?.remove();
+  },
+
+  /* ----- 完成レポート（カードUI）をチャット内に描画 ----- */
+  renderReport(sections){
+    const wrap = document.createElement("div");
+    wrap.className = "report";
+    wrap.innerHTML = `<div class="report-head">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M5 4h11l3 3v13H5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 11h8M8 15h8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      ${this.agent.name}による${this.agent.copyPerSection?"参考文章":"記録"}</div>`;
+
+    sections.forEach(sec=>{
+      const card = document.createElement("div");
+      card.className = "rcard";
+      card.dataset.key = sec.key;
+      const copyLabel = this.agent.copyLabel || "コピー";
+      // ⑤ disclaimer:true のセクションには注記を表示
+      const noteHtml = sec.disclaimer
+        ? `<div class="rc-disclaimer">※ AIによる参考案です。内容を確認・編集してご使用ください。</div>`
+        : "";
+      card.innerHTML = `
+        <div class="rc-head"><span class="rc-title">${this.escape(sec.title)}</span></div>
+        ${noteHtml}
+        <div class="rc-body">${this.escape(sec.body)}</div>
+        <div class="rc-actions">
+          <button class="btn-chip act-edit">✏️ 編集</button>
+          <button class="btn-chip act-regen">🔄 再生成</button>
+          <button class="btn-chip primary act-copy">📋 ${this.escape(copyLabel)}</button>
+        </div>`;
+      this._bindCard(card, sec);
+      wrap.appendChild(card);
+    });
+
+    this.el.messages.appendChild(wrap);
+    this.scrollDown();
+  },
+
+  _bindCard(card, sec){
+    const bodyEl = card.querySelector(".rc-body");
+    const editBtn = card.querySelector(".act-edit");
+    let editing = false, ta = null;
+
+    editBtn.addEventListener("click", ()=>{
+      if (!editing){
+        ta = document.createElement("textarea");
+        ta.value = sec.body;
+        bodyEl.replaceWith(ta);
+        editBtn.textContent = "✅ 保存";
+        editing = true;
+        ta.focus();
+      } else {
+        sec.body = ta.value;
+        const nb = document.createElement("div");
+        nb.className = "rc-body";
+        nb.textContent = sec.body;
+        ta.replaceWith(nb);
+        editBtn.textContent = "✏️ 編集";
+        editing = false;
+      }
+    });
+
+    card.querySelector(".act-regen").addEventListener("click", ()=>{
+      sec.body = this.agent.regenerate(sec.key, this.slots);
+      const cur = card.querySelector(".rc-body") || ta;
+      if (editing && ta){ ta.value = sec.body; }
+      else if (cur){ cur.textContent = sec.body; }
+      this.toast("再生成しました");
+    });
+
+    card.querySelector(".act-copy").addEventListener("click", ()=>{
+      const text = editing && ta ? ta.value : sec.body;
+      this.copy(text);
+    });
+  },
+
+  /* ----- 音声入力 -----
+   * iOS Safari の Web Speech API は未対応/不安定で、アプリ内プレビュー(埋め込み)では
+   * マイク権限が無く起動しても無反応になる。そこで iOS・埋め込み環境では
+   * 「テキスト欄にフォーカスして iOS キーボードの音声入力へ誘導」する確実な方式へ縮退する。
+   * Chrome/Edge/Android 等の対応環境では Web Speech をそのまま使用。
+   */
+  toggleVoice(){
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const inPreview = window.self !== window.top;   // アプリ内プレビュー等の埋め込み(マイク権限なし)
+    const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent)
+               || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1); // iPadOS含む
+
+    if (this.recognizing){ this.stopVoice(); return; }   // 録音中ならまず停止
+
+    // Web Speech が確実に使える環境のみ採用（iOS・埋め込みは除外）
+    const canWebSpeech = !!SR && !inPreview && !isIOS;
+    if (!canWebSpeech){
+      this.el.input.focus();   // キーボードを表示 → ユーザーは内蔵マイクで話せる
+      this.toast(inPreview
+        ? "プレビューでは音声を使えません。Safariで開くか、キーボードのマイクで入力してください"
+        : "キーボードのマイク（音声入力）から話せます");
+      return;
+    }
+
+    // --- 対応環境: Web Speech API で連続音声入力 ---
+    this.recognition = new SR();
+    this.recognition.lang = "ja-JP";
+    this.recognition.interimResults = true;
+    this.recognition.continuous = true;
+    this._baseText = this.el.input.value;
+
+    this.recognition.onresult = (e)=>{
+      let interim = "";
+      for (let i=e.resultIndex; i<e.results.length; i++) interim += e.results[i][0].transcript;
+      this.el.input.value = (this._baseText + interim).trim();
+      this.el.input.dispatchEvent(new Event("input"));
+    };
+    this.recognition.onerror = (e)=>{
+      this.stopVoice();
+      if (e && e.error === "not-allowed")
+        this.toast("マイクの使用が許可されていません。設定をご確認ください");
+    };
+    this.recognition.onend = ()=> this.stopVoice();
+
+    try{
+      this.recognition.start();
+      this.recognizing = true;
+      this.el.micBtn.classList.add("recording");
+    }catch(_){
+      this.el.input.focus();
+      this.toast("音声入力を開始できませんでした。テキストで入力してください");
+    }
+  },
+  stopVoice(){
+    this.recognizing = false;
+    this.el.micBtn.classList.remove("recording");
+    if (this.recognition){ try{ this.recognition.stop(); }catch(_){} }
+  },
+
+  /* ----- クリップボード（Safari/iPad向けフォールバック付き） ----- */
+  async copy(text){
+    try{
+      if (navigator.clipboard && window.isSecureContext){
+        await navigator.clipboard.writeText(text);
+      } else {
+        const t = document.createElement("textarea");
+        t.value = text; t.style.position="fixed"; t.style.opacity="0";
+        document.body.appendChild(t); t.select();
+        document.execCommand("copy"); t.remove();
+      }
+      this.toast("コピーしました");
+    }catch(_){ this.toast("コピーに失敗しました"); }
+  },
+
+  /* ----- 補助 ----- */
+  toast(msg){
+    this.el.toast.textContent = msg;
+    this.el.toast.classList.add("show");
+    clearTimeout(this._toastT);
+    this._toastT = setTimeout(()=>this.el.toast.classList.remove("show"), 2600);
+  },
+  scrollDown(){
+    requestAnimationFrame(()=>{ this.el.messages.scrollTop = this.el.messages.scrollHeight; });
+  },
+  escape(s){
+    return String(s).replace(/[&<>]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+  },
+};
+
+document.addEventListener("DOMContentLoaded", ()=>App.init());
+</script>
+</body>
+</html>
