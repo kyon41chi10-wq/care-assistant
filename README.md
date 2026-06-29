@@ -8,7 +8,7 @@
 
 ## デモ
 
-👉 **https://〈kyon41chi10-wq〉.github.io/care-ai-assistant/**
+👉 **https://kyon41chi10-wq.github.io/care-ai-assistant/**
 
 ## 使い方
 
